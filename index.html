@@ -60,6 +60,7 @@ svg{display:block}
 /* ---------- 通用组件 ---------- */
 .card{background:var(--panel);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:16px}
 .card+.card{margin-top:14px}
+.grid>.card+.card{margin-top:0}
 .card-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
 .card-h h3{font-size:15.5px;font-weight:700}
 .muted{color:var(--ink3);font-size:13px}
@@ -691,7 +692,7 @@ function doReschedule(id){
 /* ================= 任务编辑弹窗 ================= */
 function projectOptions(sel){
   var h='<option value="">无所属项目</option>';
-  state.projects.forEach(function(p){h+='<option value="'+p.id+'"'+(p.id===sel?' selected':'')+'>'+esc(p.name)+'</option>';});
+  state.projects.filter(function(p){return !p.deleted;}).forEach(function(p){h+='<option value="'+p.id+'"'+(p.id===sel?' selected':'')+'>'+esc(p.name)+'</option>';});
   return h;
 }
 function catOptions(sel){
@@ -763,7 +764,7 @@ function delTask(id){
 /* ================= 视图：首页 ================= */
 function renderHome(){
   var od=overdueTasks(), dt=dueTodayTasks(), wt=waitingTasks(), dn=doneTodayTasks();
-  var inProj=state.projects.filter(function(p){return projStatus(p)!=='done';}).length;
+  var inProj=state.projects.filter(function(p){return !p.deleted&&projStatus(p)!=='done';}).length;
 
   // 最重要3件事：先按截止日期近→前，同日按重要程度（重要紧急>不重要紧急>重要不紧急>不重要不紧急）
   var top=sortTasks(openTasks()).slice(0,3);
@@ -889,10 +890,10 @@ function riskRows(){
   var d24=openTasks().filter(function(t){var d=dayDiff(t.due,todayStr());return d===0;});
   rows.push({sev:d24.length?'amber':'green',title:'24 小时内截止',desc:d24.length?d24.map(function(t){return t.title;}).join('、'):'今天没有临期任务',cnt:d24.length});
   // 3 3天内未交付项目
-  var dueP=state.projects.filter(function(p){var d=dayDiff(p.deadline,todayStr());return d>=0&&d<=3&&projStatus(p)!=='done';});
+  var dueP=state.projects.filter(function(p){var d=dayDiff(p.deadline,todayStr());return !p.deleted&&d>=0&&d<=3&&projStatus(p)!=='done';});
   rows.push({sev:dueP.length?'amber':'green',title:'3 天内需交付项目',desc:dueP.length?dueP.map(function(p){return p.name+'（剩'+dayDiff(p.deadline,todayStr())+'天）';}).join('、'):'近期无临期项目',cnt:dueP.length});
   // 4 手动阻塞项目
-  var blk=state.projects.filter(function(p){return p.blocked;});
+ var blk=state.projects.filter(function(p){return !p.deleted&&p.blocked;});
   rows.push({sev:blk.length?'red':'green',title:'手动阻塞项目',desc:blk.length?blk.map(function(p){return p.name+'：'+(p.nextStep||'待解除阻塞');}).join('、'):'没有阻塞中的项目',cnt:blk.length});
   // 5 等待超3天
   var wt=waitingTasks().filter(function(t){return t.waitSince&&dayDiff(todayStr(),t.waitSince)>=3;});
@@ -961,7 +962,7 @@ function renderReview(){
 }
 function genReport(){
   var s=weekStats();
-  var projs=state.projects.filter(function(p){return projStatus(p)!=='done';});
+  var projs=state.projects.filter(function(p){return !p.deleted&&projStatus(p)!=='done';});
   var risks=riskRows().filter(function(r){return r.cnt>0;});
   var lines=[];
   lines.push('【本周工作周报】');
