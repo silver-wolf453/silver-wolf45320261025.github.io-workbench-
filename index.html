@@ -976,7 +976,7 @@ function validateDynamicProductFields(product){
       if((typeof raw!=='number'&&typeof raw!=='string')||!Number.isFinite(Number(raw)))return label+'请输入有效数值';
       if(['workHours','totalManpower','totalBomHours'].indexOf(field.key)>=0&&Number(raw)<0)return label+'不能小于 0';
     }else if(field.type==='date'){if(!productDynamicDateValid(raw))return label+'请选择有效日期';}
-    else if(field.type==='formula'){if(typeof raw!=='string'||!productFormulaExpression(raw))return label+'请输入函数公式';}
+    else if(field.type==='formula'){if(typeof raw!=='string'||!productFormulaExpression(raw))return label+'请输入函数公式';var rejected=productFormulaRejection(productFormulaExpression(raw));if(rejected)return label+'：'+rejected;}
     else if(typeof raw!=='string'&&typeof raw!=='number')return label+'请输入文本';
   }
   return '';
@@ -984,8 +984,11 @@ function validateDynamicProductFields(product){
 function productFieldsEscape(value){return String(value==null?'':value).replace(/[&<>"']/g,function(character){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character];});}
 function productFieldInputId(key){var ids={pn:'wtPN',name:'wtName',spec:'wtSpec',workHours:'wtWorkHours',productCategory:'wtProductCategory',projectCategory:'wtProjectCategory',version:'wtVersion',date:'wtDate',modifiedBy:'wtModifiedBy',totalManpower:'wtTotalManpower',totalBomHours:'wtTotalBomHours'};return ids[key]||'productValue_'+key;}
 function productFieldTypeAllowed(type){return ['text','number','date','formula'].indexOf(type)>=0;}
+var PRODUCT_FORMULA_FUNCTIONS=['SUM','IF','SUMIF','AVERAGE','COUNT','SIN','MAX'];
 function productFormulaExpression(value){var text=String(value==null?'':value).trim();if(text.charAt(0)==='=')text=text.slice(1).trim();return text;}
 function normalizeProductFormula(value){var expression=productFormulaExpression(value);return expression?'='+expression:'';}
+function productFormulaCalls(expression){var names=[],match,pattern=/[A-Za-z_][A-Za-z0-9_]*\s*\(/g;while((match=pattern.exec(expression)))names.push(match[0].replace(/\s*\($/,'').toUpperCase());return names;}
+function productFormulaRejection(expression){var names=productFormulaCalls(expression);if(!names.length)return '请使用 SUM、IF、SUMIF、AVERAGE、COUNT、SIN 或 MAX';var blocked=names.filter(function(name){return PRODUCT_FORMULA_FUNCTIONS.indexOf(name)<0;});return blocked.length?'不支持 '+blocked[0]+'，仅可使用 SUM、IF、SUMIF、AVERAGE、COUNT、SIN、MAX':'';}
 function productFunctionDisplay(product,key){var result=product&&product.fieldResults&&product.fieldResults[key];if(result&&result.display)return result.display;if(result&&result.error)return result.error;var formula=productFieldValue(product,key);return formula==null?'':String(formula);}
 function renderProductFields(product){
   return productActiveFields(product).map(function(field){
@@ -994,7 +997,7 @@ function renderProductFields(product){
     if(field.type==='formula'){
       var picking=typeof _productFunctionPick!=='undefined'&&_productFunctionPick&&_productFunctionPick.key===field.key;
       var shown=productFunctionDisplay(product,field.key)||'—';
-      return '<div class="field product-dynamic-field product-function-field'+(picking?' is-picking':'')+'" data-product-field-wrap="'+key+'"><label for="'+id+'">'+productFieldsEscape(label)+required+'</label><div class="product-function-row"><input id="'+id+'" type="text" spellcheck="false" autocomplete="off" data-product-function="true" data-product-value-key="'+key+'" value="'+productFieldsEscape(value)+'" placeholder="例如 =SUM(A1,B1) 或 =AVERAGE(A1:A10)"'+(field.required?' required aria-required="true"':'')+'><button type="button" class="btn sm" data-product-function-pick="'+key+'" aria-pressed="'+(picking?'true':'false')+'">'+(picking?'结束选取':'选取单元格')+'</button></div><p class="product-function-result" data-product-function-result="'+key+'">结果：'+productFieldsEscape(shown)+'</p><p class="product-function-hint">可调用当前表格里的全部函数。点“选取单元格”后，在下方工作表中点选单元格或区域。</p></div>';
+      return '<div class="field product-dynamic-field product-function-field'+(picking?' is-picking':'')+'" data-product-field-wrap="'+key+'"><label for="'+id+'">'+productFieldsEscape(label)+required+'</label><div class="product-function-row"><input id="'+id+'" type="text" spellcheck="false" autocomplete="off" data-product-function="true" data-product-value-key="'+key+'" value="'+productFieldsEscape(value)+'" placeholder="例如 =SUM(A1,B1) 或 =AVERAGE(A1:A10)"'+(field.required?' required aria-required="true"':'')+'><button type="button" class="btn sm" data-product-function-pick="'+key+'" aria-pressed="'+(picking?'true':'false')+'">'+(picking?'结束选取':'选取单元格')+'</button></div><p class="product-function-result" data-product-function-result="'+key+'">结果：'+productFieldsEscape(shown)+'</p><p class="product-function-hint">仅支持 SUM、IF、SUMIF、AVERAGE、COUNT、SIN、MAX。点“选取单元格”后，在下方工作表中点选参数。</p></div>';
     }
     return '<div class="field product-dynamic-field" data-product-field-wrap="'+key+'"><label for="'+id+'">'+productFieldsEscape(label)+required+'</label><input id="'+id+'" type="'+field.type+'" data-product-value-key="'+key+'" value="'+productFieldsEscape(value)+'"'+(field.required?' required aria-required="true"':'')+(field.type==='number'?' step="any"':'')+'></div>';
   }).join('')||'<div class="product-fields-empty">暂无产品字段，可在字段设置中添加。</div>';
@@ -1087,7 +1090,7 @@ function destroyProductFieldEditor(){
   document.removeEventListener('selectionchange',controller.trackCaret);
 }
 
-var _productFunctionPick=null,_productFunctionEvalTimer=0,_productFunctionEvalSerial=0,_productFunctionQuietUntil=0,_productFunctionSelectionTimer=0,_productFunctionPendingSelection=null;
+var _productFunctionPick=null,_productFunctionEvalTimer=0,_productFunctionEvalSerial=0,_productFunctionEvaluating=false,_productFunctionSelectionTimer=0,_productFunctionPendingSelection=null;
 function productFunctionFormat(value){
   if(value==null||value==='')return '';
   if(typeof value==='number')return Number.isFinite(value)?formatWorktimeNumber(value):'';
@@ -1163,33 +1166,38 @@ function paintProductFunctionResults(product){
 }
 function scheduleProductFunctionEvaluation(){clearTimeout(_productFunctionEvalTimer);_productFunctionEvalTimer=setTimeout(function(){refreshProductFunctionResults().catch(function(){});},180);}
 async function refreshProductFunctionResults(){
+  if(_productFunctionEvaluating){scheduleProductFunctionEvaluation();return;}
   var serial=++_productFunctionEvalSerial,product=_worktimeDraft,engine=typeof _productWorkbookEngine!=='undefined'?_productWorkbookEngine:null;
-  if(!product||!engine||!engine.ready||!engine.univerAPI||!engine.univerAPI.getActiveWorkbook)return;
+  if(!product||!document.getElementById('worktimeProductForm'))return;
+  if(!engine||!engine.ready||!engine.univerAPI||!engine.univerAPI.getActiveWorkbook){scheduleProductFunctionEvaluation();return;}
   readDynamicProductFields(product);
   var workbook=engine.univerAPI.getActiveWorkbook(),sheet=workbook&&workbook.getActiveSheet&&workbook.getActiveSheet();
   if(!workbook||!sheet)return;
   var unitId=typeof workbook.getId==='function'?workbook.getId():(typeof workbook.getUnitId==='function'?workbook.getUnitId():''),sheetId=typeof sheet.getSheetId==='function'?sheet.getSheetId():'';
   if(!unitId||!sheetId)return;
   var batch={},keys=[],row=0;
+  product.fieldResults=productFieldsObject(product.fieldResults);
   productActiveFields(product).forEach(function(field){
     if(field.type!=='formula')return;
     var expression=productFormulaExpression(productFieldValue(product,field.key));
-    product.fieldResults=productFieldsObject(product.fieldResults);
     if(!expression){delete product.fieldResults[field.key];return;}
+    var reason=productFormulaRejection(expression);
+    if(reason){product.fieldResults[field.key]={display:'',error:reason};return;}
     if(!batch[unitId])batch[unitId]={};if(!batch[unitId][sheetId])batch[unitId][sheetId]={};
     batch[unitId][sheetId][row]={0:[expression]};keys.push({key:field.key,row:row});row++;
   });
   if(!keys.length){paintProductFunctionResults(product);return;}
-  _productFunctionQuietUntil=Date.now()+4000;
+  _productFunctionEvaluating=true;
   var result;
-  try{result=await engine.univerAPI.getFormula().executeFormulas(batch,8000);}catch(error){if(serial!==_productFunctionEvalSerial)return;keys.forEach(function(item){product.fieldResults[item.key]={display:'',error:'无法计算公式'};});paintProductFunctionResults(product);_productFunctionQuietUntil=Date.now()+400;return;}
+  try{result=await engine.univerAPI.getFormula().executeFormulas(batch,8000);}catch(error){if(serial!==_productFunctionEvalSerial)return;keys.forEach(function(item){product.fieldResults[item.key]={display:'',error:'无法计算公式'};});paintProductFunctionResults(product);return;}
+  finally{_productFunctionEvaluating=false;}
   if(serial!==_productFunctionEvalSerial||_worktimeDraft!==product)return;
   keys.forEach(function(item){
     var cell=result&&result[unitId]&&result[unitId][sheetId]&&result[unitId][sheetId][item.row]&&result[unitId][sheetId][item.row][0];
     var entry=Array.isArray(cell)?cell[0]:cell,display=productFunctionFormat(entry&&Object.prototype.hasOwnProperty.call(entry,'value')?entry.value:entry);
     product.fieldResults[item.key]=display?{display:display,error:''}:{display:'',error:'无法计算公式'};
   });
-  paintProductFunctionResults(product);_productFunctionQuietUntil=Date.now()+400;
+  paintProductFunctionResults(product);
 }
 
 var WORKTIME_PRODUCT_LIMIT=9999;
@@ -3141,7 +3149,7 @@ function worktimeEditorHasChanges(){
   readWorktimeEditorDraft();return _productCloseFlushFailed||productFieldsComparable(_worktimeDraft)!==_productEditorBaselineFields||productWorkbookComparable(_worktimeDraft.workbookSnapshot)!==_productEditorBaselineBook;
 }
 function onProductFieldMutation(){syncWorktimePnValidation();var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;}
-function onProductWorkbookChanged(){var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;if(Date.now()<(typeof _productFunctionQuietUntil==='number'?_productFunctionQuietUntil:0))return;if(typeof scheduleProductFunctionEvaluation==='function')scheduleProductFunctionEvaluation();}
+function onProductWorkbookChanged(){var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;if(typeof scheduleProductFunctionEvaluation!=='function')return;if(typeof _productFunctionEvaluating!=='undefined'&&_productFunctionEvaluating){scheduleProductFunctionEvaluation();return;}if(typeof _productWorkbookEngine!=='undefined'&&_productWorkbookEngine&&_productWorkbookEngine.pendingEdit)return;scheduleProductFunctionEvaluation();}
 function productFieldInputForKey(key){return Array.from(document.querySelectorAll('#productFieldsContainer [data-product-value-key]')).find(function(input){return input.dataset.productValueKey===key;})||null;}
 function syncWorktimePnValidation(){
   if(!_worktimeDraft)return '';var field=_worktimeDraft.fieldSchema.find(function(item){return item.key==='pn';});
@@ -3680,6 +3688,29 @@ function resizeProductWorkbookEditor(){
   engine.iframe.contentWindow.dispatchEvent(new Event('resize'));
 }
 function productWorkbookEditingState(){var engine=_productWorkbookEngine;return !!(engine&&engine.pendingEdit);}
+function productSheetEditorBridge(engine){
+  if(!engine)return null;if(engine.sheetEditorBridge)return engine.sheetEditorBridge;
+  var injector=engine.univer&&engine.univer.__getInjector&&engine.univer.__getInjector();
+  var map=injector&&injector.dependencyCollection&&injector.dependencyCollection.dependencyMap;if(!map)return null;
+  var found=null;
+  map.forEach(function(value,key){if(String(key)==='univer.sheet-editor-bridge.service')found=injector.get(key);});
+  engine.sheetEditorBridge=found;return found;
+}
+function revealPendingSheetCellEdit(engine){
+  var workbook=engine&&engine.workbook,bridge=productSheetEditorBridge(engine);
+  if(!workbook||typeof workbook.startEditing!=='function'||!bridge||typeof bridge.isVisible!=='function')return;
+  if(bridge.isVisible().visible)return;
+  try{workbook.startEditing();}catch(ignore){return;}
+  try{if(typeof bridge.changeEditorDirty==='function')bridge.changeEditorDirty(true);}catch(ignore){}
+}
+function installSheetCellEditReveal(win){
+  var doc=win&&win.document;if(!doc||doc.__wbSheetEditReveal)return;doc.__wbSheetEditReveal=true;
+  doc.addEventListener('beforeinput',function(event){
+    var node=event.target;if(node&&node.nodeType===3)node=node.parentElement;
+    if(!node||!node.closest||!node.closest('#__editor___INTERNAL_EDITOR__DOCS_NORMAL'))return;
+    revealPendingSheetCellEdit(typeof _productWorkbookEngine!=='undefined'?_productWorkbookEngine:null);
+  },true);
+}
 function disposeProductWorkbookEditor(){
   var engine=_productWorkbookEngine;_productWorkbookEngine=null;_productWorkbookEngineSerial++;
   if(!engine)return;engine.disposed=true;
@@ -3712,9 +3743,10 @@ async function initProductWorkbookEditor(container,product){
           var lifecycle=engine.univerAPI.addEvent(engine.univerAPI.Event.LifeCycleChanged,function(event){if(event.stage===engine.univerAPI.Enum.LifecycleStages.Steady){lifecycle.dispose();done();}});engine.listeners.push(lifecycle);
         });
         function notify(){if(engine.ready&&!engine.disposed&&_productWorkbookEngine===engine&&typeof window.onProductWorkbookChanged==='function')window.onProductWorkbookChanged();}
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){if(event.type===2||/mutation/.test(event.id))notify();}));
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;notify();}));
+        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){if(engine.pendingEdit)return;if(event.type===2||/mutation/.test(event.id))notify();}));
+        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;}));
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditEnded,function(){engine.pendingEdit=false;notify();}));
+        installSheetCellEditReveal(win);
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SelectionChanged,function(event){if(typeof acceptProductFunctionSelection==='function')acceptProductFunctionSelection(event);}));
         // 初始公式先完成，再向产品编辑器交付可比较的基线，避免重算被误认为用户改动。
         await engine.univerAPI.getFormula().onCalculationResultApplied(20000);
