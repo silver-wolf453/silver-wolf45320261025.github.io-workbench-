@@ -480,15 +480,6 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
 
 /* 产品字段和配置器使用实色，字段类型/名称变化不影响其他产品。 */
 #productFieldsContainer{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 13px;min-width:0}
-.product-function-field{grid-column:1/-1}
-.product-function-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.product-function-row input{flex:1 1 180px;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.product-function-row .btn{flex:none}
-.product-function-result{margin:6px 0 0;font-size:12.5px;color:#2456e6}
-.product-function-hint{margin:3px 0 0;font-size:12px;color:#788294}
-.product-function-field.is-picking .product-function-hint{color:#1b44c0}
-.product-function-row .btn[aria-pressed="true"]{background:#2456e6;color:#fff;border-color:#2456e6}
-#productWorkbookHost.is-function-picking{outline:2px solid #2456e6;outline-offset:2px}
 #productFieldsContainer .field{min-width:0}
 #productFieldsContainer label{display:block;color:#535d6e;font-size:12.5px;margin-bottom:5px;overflow-wrap:anywhere}
 #productFieldsContainer input{display:block;width:100%;min-width:0;padding:11px 12px;border:1px solid #dfe4ec;border-radius:10px;background:#f4f6fa;color:#171a21;font-size:16px;outline:none}
@@ -919,6 +910,7 @@ function ensureProductFieldSchema(product){
   product.fieldValues=productFieldsObject(product.fieldValues);
   product.fieldResults=productFieldsObject(product.fieldResults);
   product.fieldArchive=productFieldsObject(product.fieldArchive);
+  retireProductFormulaFields(product);
   if(!Array.isArray(product.fieldSchema))product.fieldSchema=productDefaultFieldSchema();
   var seen=new Set();
   product.fieldSchema=product.fieldSchema.filter(function(field){return field&&typeof field==='object';}).map(function(field){
@@ -975,34 +967,42 @@ function validateDynamicProductFields(product){
     if(field.type==='number'){
       if((typeof raw!=='number'&&typeof raw!=='string')||!Number.isFinite(Number(raw)))return label+'请输入有效数值';
       if(['workHours','totalManpower','totalBomHours'].indexOf(field.key)>=0&&Number(raw)<0)return label+'不能小于 0';
-    }else if(field.type==='date'){if(!productDynamicDateValid(raw))return label+'请选择有效日期';}
-    else if(field.type==='formula'){if(typeof raw!=='string'||!productFormulaExpression(raw))return label+'请输入函数公式';var rejected=productFormulaRejection(productFormulaExpression(raw));if(rejected)return label+'：'+rejected;}
+    }    else if(field.type==='date'){if(!productDynamicDateValid(raw))return label+'请选择有效日期';}
     else if(typeof raw!=='string'&&typeof raw!=='number')return label+'请输入文本';
   }
   return '';
 }
 function productFieldsEscape(value){return String(value==null?'':value).replace(/[&<>"']/g,function(character){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character];});}
 function productFieldInputId(key){var ids={pn:'wtPN',name:'wtName',spec:'wtSpec',workHours:'wtWorkHours',productCategory:'wtProductCategory',projectCategory:'wtProjectCategory',version:'wtVersion',date:'wtDate',modifiedBy:'wtModifiedBy',totalManpower:'wtTotalManpower',totalBomHours:'wtTotalBomHours'};return ids[key]||'productValue_'+key;}
-function productFieldTypeAllowed(type){return ['text','number','date','formula'].indexOf(type)>=0;}
-var PRODUCT_FORMULA_FUNCTIONS=['SUM','IF','SUMIF','AVERAGE','COUNT','SIN','MAX'];
-function productFormulaExpression(value){var text=String(value==null?'':value).trim();if(text.charAt(0)==='=')text=text.slice(1).trim();return text;}
-function normalizeProductFormula(value){var expression=productFormulaExpression(value);return expression?'='+expression:'';}
-function productFormulaCalls(expression){var names=[],match,pattern=/[A-Za-z_][A-Za-z0-9_]*\s*\(/g;while((match=pattern.exec(expression)))names.push(match[0].replace(/\s*\($/,'').toUpperCase());return names;}
-function productFormulaRejection(expression){var names=productFormulaCalls(expression);if(!names.length)return '请使用 SUM、IF、SUMIF、AVERAGE、COUNT、SIN 或 MAX';var blocked=names.filter(function(name){return PRODUCT_FORMULA_FUNCTIONS.indexOf(name)<0;});return blocked.length?'不支持 '+blocked[0]+'，仅可使用 SUM、IF、SUMIF、AVERAGE、COUNT、SIN、MAX':'';}
-function productFunctionDisplay(product,key){var result=product&&product.fieldResults&&product.fieldResults[key];if(result&&result.display)return result.display;if(result&&result.error)return result.error;var formula=productFieldValue(product,key);return formula==null?'':String(formula);}
+function productFieldTypeAllowed(type){return ['text','number','date'].indexOf(type)>=0;}
+function retireProductFormulaFields(product){
+  if(!product||!Array.isArray(product.fieldSchema))return;
+  var defaults={};productDefaultFieldSchema().forEach(function(field){defaults[field.key]=field.type;});
+  var kept=[];
+  product.fieldSchema.forEach(function(field){
+    if(!field||typeof field!=='object'||field.type!=='formula'){kept.push(field);return;}
+    var key=productSafeFieldKey(field.key)?field.key:(productSafeFieldKey(field.id)?field.id:'');
+    var value=key?productFieldValue(product,key):undefined;
+    var result=key&&product.fieldResults?product.fieldResults[key]:undefined;
+    if(key){
+      product.fieldArchive[key]={field:productFieldClone(field),hasValue:value!==undefined,value:productFieldClone(value),result:result===undefined?undefined:productFieldClone(result)};
+      if(product.fieldResults)delete product.fieldResults[key];
+    }
+    if(!key||!Object.prototype.hasOwnProperty.call(defaults,key))return;
+    if(defaults[key]==='number'&&!(typeof value==='number'||typeof value==='string'&&String(value).trim()&&Number.isFinite(Number(value))))setProductFieldValue(product,key,'');
+    else if(defaults[key]==='date'&&!productDynamicDateValid(value))setProductFieldValue(product,key,'');
+    kept.push({id:key,key:key,label:typeof field.label==='string'?field.label:'字段',type:defaults[key],required:field.required===true});
+  });
+  product.fieldSchema=kept;
+}
 function renderProductFields(product){
   return productActiveFields(product).map(function(field){
     var id=productFieldInputId(field.key),label=field.label||'未命名字段',value=productFieldValue(product,field.key),key=productFieldsEscape(field.key);
     var required=field.required?'<span class="product-field-required" aria-hidden="true">*</span>':'';
-    if(field.type==='formula'){
-      var picking=typeof _productFunctionPick!=='undefined'&&_productFunctionPick&&_productFunctionPick.key===field.key;
-      var shown=productFunctionDisplay(product,field.key)||'—';
-      return '<div class="field product-dynamic-field product-function-field'+(picking?' is-picking':'')+'" data-product-field-wrap="'+key+'"><label for="'+id+'">'+productFieldsEscape(label)+required+'</label><div class="product-function-row"><input id="'+id+'" type="text" spellcheck="false" autocomplete="off" data-product-function="true" data-product-value-key="'+key+'" value="'+productFieldsEscape(value)+'" placeholder="例如 =SUM(A1,B1) 或 =AVERAGE(A1:A10)"'+(field.required?' required aria-required="true"':'')+'><button type="button" class="btn sm" data-product-function-pick="'+key+'" aria-pressed="'+(picking?'true':'false')+'">'+(picking?'结束选取':'选取单元格')+'</button></div><p class="product-function-result" data-product-function-result="'+key+'">结果：'+productFieldsEscape(shown)+'</p><p class="product-function-hint">仅支持 SUM、IF、SUMIF、AVERAGE、COUNT、SIN、MAX。点“选取单元格”后，在下方工作表中点选参数。</p></div>';
-    }
     return '<div class="field product-dynamic-field" data-product-field-wrap="'+key+'"><label for="'+id+'">'+productFieldsEscape(label)+required+'</label><input id="'+id+'" type="'+field.type+'" data-product-value-key="'+key+'" value="'+productFieldsEscape(value)+'"'+(field.required?' required aria-required="true"':'')+(field.type==='number'?' step="any"':'')+'></div>';
   }).join('')||'<div class="product-fields-empty">暂无产品字段，可在字段设置中添加。</div>';
 }
-function productFieldTypeOptions(value){return [['text','文本'],['number','数值'],['date','日期'],['formula','函数']].map(function(pair){return '<option value="'+pair[0]+'"'+(value===pair[0]?' selected':'')+'>'+pair[1]+'</option>';}).join('');}
+function productFieldTypeOptions(value){return [['text','文本'],['number','数值'],['date','日期']].map(function(pair){return '<option value="'+pair[0]+'"'+(value===pair[0]?' selected':'')+'>'+pair[1]+'</option>';}).join('');}
 function productFieldsDeleteIcon(){return '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';}
 function renderProductFieldDesigner(product){
   var fields=productActiveFields(product),rows=fields.map(function(field){var key=productFieldsEscape(field.key);return '<div class="product-field-designer-row" data-product-schema-row="'+key+'"><label class="product-field-name"><span>字段名称</span><input type="text" data-product-config-label="'+key+'" value="'+productFieldsEscape(field.label)+'" aria-label="字段名称：'+productFieldsEscape(field.label||'未命名字段')+'"></label><label class="product-field-kind"><span>类型</span><select data-product-config-type="'+key+'" aria-label="字段类型：'+productFieldsEscape(field.label||'未命名字段')+'">'+productFieldTypeOptions(field.type)+'</select></label><label class="product-field-mandatory"><input type="checkbox" data-product-config-required="'+key+'"'+(field.required?' checked':'')+'>必填</label><button type="button" class="btn sm icon-only product-field-remove" data-product-field-action="remove" data-product-field-key="'+key+'" title="删除字段" aria-label="删除字段：'+productFieldsEscape(field.label||'未命名字段')+'">'+productFieldsDeleteIcon()+'</button></div>';}).join('');
@@ -1011,7 +1011,7 @@ function renderProductFieldDesigner(product){
 function readDynamicProductFields(product){
   var container=typeof document!=='undefined'?document.getElementById('productFieldsContainer'):null;
   if(!container||!product)return product;
-  container.querySelectorAll('[data-product-value-key]').forEach(function(input){var value=input.type==='number'?(input.value===''?'':Number(input.value)):input.value;if(input.dataset.productFunction)value=normalizeProductFormula(value);setProductFieldValue(product,input.dataset.productValueKey,value);});
+  container.querySelectorAll('[data-product-value-key]').forEach(function(input){var value=input.type==='number'?(input.value===''?'':Number(input.value)):input.value;setProductFieldValue(product,input.dataset.productValueKey,value);});
   return product;
 }
 function productFieldMutation(kind,key){if(typeof onProductFieldMutation==='function')onProductFieldMutation({kind:kind,key:key});}
@@ -1024,7 +1024,8 @@ function addDynamicProductField(product,label,type,required){
   var standard=productDefaultFieldSchema().find(function(field){return !active.has(field.key)&&field.label===label;}),key=archivedKey||(standard&&standard.key)||productNewFieldKey();
   while(active.has(key))key=productNewFieldKey();
   var field={id:key,key:key,label:label,type:type,required:required===true};product.fieldSchema.push(field);
-  if(archivedKey&&product.fieldArchive[archivedKey]&&product.fieldArchive[archivedKey].hasValue)setProductFieldValue(product,key,productFieldClone(product.fieldArchive[archivedKey].value));
+  var archived=archivedKey&&product.fieldArchive[archivedKey];
+  if(archived&&archived.hasValue&&!(archived.field&&archived.field.type==='formula'))setProductFieldValue(product,key,productFieldClone(archived.value));
   else if(productFieldValue(product,key)==null)setProductFieldValue(product,key,'');
   return {field:field,error:''};
 }
@@ -1040,10 +1041,7 @@ function mountProductFieldEditor(product){
   if(container)container.innerHTML=renderProductFields(product);if(designer)designer.innerHTML=renderProductFieldDesigner(product);
   var controller={product:product,container:container,designer:designer};
   function busy(){return typeof _worktimeSaving!=='undefined'&&_worktimeSaving;}
-  controller.valueInput=function(event){var key=event.target&&event.target.dataset.productValueKey;if(!key||busy())return;var value=event.target.type==='number'?(event.target.value===''?'':Number(event.target.value)):event.target.value;setProductFieldValue(product,key,value);if(event.target.dataset.productFunction){if(_productFunctionPick&&_productFunctionPick.key===key)_productFunctionPick.caret=event.target.selectionStart;scheduleProductFunctionEvaluation();}productFieldMutation('value',key);};
-  controller.containerClick=function(event){var button=event.target&&event.target.closest&&event.target.closest('[data-product-function-pick]');if(!button||!container.contains(button)||busy())return;event.preventDefault();toggleProductFunctionPick(button.getAttribute('data-product-function-pick'));};
-  controller.focusOut=function(event){var input=event.target;if(!input||!input.dataset||!input.dataset.productFunction||!_productFunctionPick||_productFunctionPick.key!==input.dataset.productValueKey)return;_productFunctionPick.caret=input.selectionStart;};
-  controller.trackCaret=function(){var input=document.activeElement;if(!input||!input.dataset||!input.dataset.productFunction||!_productFunctionPick||_productFunctionPick.key!==input.dataset.productValueKey)return;_productFunctionPick.caret=input.selectionStart;};
+  controller.valueInput=function(event){var key=event.target&&event.target.dataset.productValueKey;if(!key||busy())return;var value=event.target.type==='number'?(event.target.value===''?'':Number(event.target.value)):event.target.value;setProductFieldValue(product,key,value);productFieldMutation('value',key);};
   controller.configInput=function(event){
     if(busy()||!event.target)return;var key=event.target.dataset.productConfigLabel;if(!key)return;
     var field=product.fieldSchema.find(function(item){return item.key===key;});if(!field)return;
@@ -1072,132 +1070,18 @@ function mountProductFieldEditor(product){
     productFieldMutation(action,key);
     var focus=action==='add'?container&&container.querySelector('[data-product-value-key="'+key+'"]'):designer.querySelector('#productNewFieldLabel');if(focus)focus.focus({preventScroll:true});
   };
-  if(container){container.addEventListener('input',controller.valueInput);container.addEventListener('change',controller.valueInput);container.addEventListener('click',controller.containerClick);container.addEventListener('focusout',controller.focusOut);}
+  if(container){container.addEventListener('input',controller.valueInput);container.addEventListener('change',controller.valueInput);}
   if(designer){designer.addEventListener('input',controller.configInput);designer.addEventListener('change',controller.configChange);designer.addEventListener('click',controller.configClick);}
-  document.addEventListener('selectionchange',controller.trackCaret);
   _productFieldEditorController=controller;return controller;
 }
 function setProductFieldEditorDisabled(disabled){
   var controller=_productFieldEditorController;if(!controller)return;
-  if(disabled)cancelProductFunctionPick();
   [controller.container,controller.designer].forEach(function(container){if(container)container.querySelectorAll('input,select,button').forEach(function(input){input.disabled=!!disabled;});});
 }
 function destroyProductFieldEditor(){
   var controller=_productFieldEditorController;_productFieldEditorController=null;if(!controller)return;
-  cancelProductFunctionPick();clearTimeout(_productFunctionEvalTimer);
-  if(controller.container){controller.container.removeEventListener('input',controller.valueInput);controller.container.removeEventListener('change',controller.valueInput);controller.container.removeEventListener('click',controller.containerClick);controller.container.removeEventListener('focusout',controller.focusOut);}
+  if(controller.container){controller.container.removeEventListener('input',controller.valueInput);controller.container.removeEventListener('change',controller.valueInput);}
   if(controller.designer){controller.designer.removeEventListener('input',controller.configInput);controller.designer.removeEventListener('change',controller.configChange);controller.designer.removeEventListener('click',controller.configClick);}
-  document.removeEventListener('selectionchange',controller.trackCaret);
-}
-
-var _productFunctionPick=null,_productFunctionEvalTimer=0,_productFunctionEvalSerial=0,_productFunctionEvaluating=false,_productFunctionSelectionTimer=0,_productFunctionPendingSelection=null;
-function productFunctionFormat(value){
-  if(value==null||value==='')return '';
-  if(typeof value==='number')return Number.isFinite(value)?formatWorktimeNumber(value):'';
-  if(typeof value==='boolean')return value?'TRUE':'FALSE';
-  if(value instanceof Date)return value.toISOString().slice(0,10);
-  if(typeof value==='object'){
-    if(value.error)return String(value.error);
-    if(Object.prototype.hasOwnProperty.call(value,'v'))return productFunctionFormat(value.v);
-    return '';
-  }
-  return String(value);
-}
-function productFunctionRangeRef(worksheet,range){
-  if(!range)return '';
-  var plain=typeof range.getRange==='function'?range.getRange():range;
-  if(worksheet&&typeof worksheet.getRange==='function'&&plain&&plain.startRow!=null&&plain.startColumn!=null){
-    var rows=Math.max(1,(plain.endRow==null?plain.startRow:plain.endRow)-plain.startRow+1),cols=Math.max(1,(plain.endColumn==null?plain.startColumn:plain.endColumn)-plain.startColumn+1);
-    try{var facade=worksheet.getRange(plain.startRow,plain.startColumn,rows,cols);if(facade&&typeof facade.getA1Notation==='function')return facade.getA1Notation(true);}catch(ignore){}
-  }
-  function columnName(index){var name='',number=index+1;while(number>0){var remainder=(number-1)%26;name=String.fromCharCode(65+remainder)+name;number=Math.floor((number-1)/26); }return name;}
-  var start=columnName(plain.startColumn)+(plain.startRow+1),end=columnName(plain.endColumn==null?plain.startColumn:plain.endColumn)+((plain.endRow==null?plain.startRow:plain.endRow)+1);
-  return start===end?start:start+':'+end;
-}
-function syncProductFunctionPickUi(){
-  var host=document.getElementById('productWorkbookHost');if(host)host.classList.toggle('is-function-picking',!!_productFunctionPick);
-  document.querySelectorAll('[data-product-function-pick]').forEach(function(button){
-    var active=!!(_productFunctionPick&&button.getAttribute('data-product-function-pick')===_productFunctionPick.key);
-    button.setAttribute('aria-pressed',active?'true':'false');button.textContent=active?'结束选取':'选取单元格';
-    var wrap=button.closest('.product-function-field');if(wrap)wrap.classList.toggle('is-picking',active);
-  });
-}
-function cancelProductFunctionPick(){if(!_productFunctionPick&&!_productFunctionSelectionTimer)return false;_productFunctionPick=null;_productFunctionPendingSelection=null;clearTimeout(_productFunctionSelectionTimer);_productFunctionSelectionTimer=0;syncProductFunctionPickUi();return !!document.getElementById('productWorkbookHost');}
-function toggleProductFunctionPick(key){
-  if(_productFunctionPick&&_productFunctionPick.key===key){cancelProductFunctionPick();return;}
-  var input=document.querySelector('#productFieldsContainer [data-product-value-key="'+key+'"]');if(!input)return;
-  _productFunctionPick={key:key,caret:typeof input.selectionStart==='number'?input.selectionStart:String(input.value||'').length};
-  syncProductFunctionPickUi();try{input.focus();}catch(ignore){}
-}
-function insertProductFunctionRefs(input,refText){
-  if(!input||!refText||!_worktimeDraft)return;
-  var value=String(input.value||''),caret=_productFunctionPick&&typeof _productFunctionPick.caret==='number'?_productFunctionPick.caret:value.length;
-  if(caret<0||caret>value.length)caret=value.length;
-  var before=value.slice(0,caret),after=value.slice(caret),trimmed=before.replace(/\s+$/,'');
-  if(!trimmed)before='=';
-  var last=before.replace(/\s+$/,'').slice(-1),joiner=!before.replace(/\s+$/,'')||before.replace(/\s+$/,'')==='='||'(+-*/^,&=<>:'.indexOf(last)>=0?'':',';
-  var next=before+joiner+refText+after,pos=(before+joiner+refText).length;
-  input.value=next;if(_productFunctionPick)_productFunctionPick.caret=pos;
-  setProductFieldValue(_worktimeDraft,input.dataset.productValueKey,next);
-  try{input.focus();input.setSelectionRange(pos,pos);}catch(ignore){}
-  scheduleProductFunctionEvaluation();productFieldMutation('value',input.dataset.productValueKey);
-}
-function applyProductFunctionSelection(event){
-  if(!_productFunctionPick||!_worktimeDraft||!event)return;
-  var input=document.querySelector('#productFieldsContainer [data-product-value-key="'+_productFunctionPick.key+'"]');
-  if(!input){cancelProductFunctionPick();return;}
-  var selections=event.selections;
-  if((!selections||!selections.length)&&event.row!=null&&event.column!=null)selections=[{startRow:event.row,endRow:event.row,startColumn:event.column,endColumn:event.column}];
-  if(!selections||!selections.length)return;
-  var refs=selections.map(function(range){return productFunctionRangeRef(event.worksheet,range);}).filter(Boolean);
-  if(refs.length)insertProductFunctionRefs(input,refs.join(','));
-}
-function acceptProductFunctionSelection(event){
-  if(!_productFunctionPick||!event)return;
-  _productFunctionPendingSelection=event;clearTimeout(_productFunctionSelectionTimer);
-  _productFunctionSelectionTimer=setTimeout(function(){var pending=_productFunctionPendingSelection;_productFunctionPendingSelection=null;_productFunctionSelectionTimer=0;applyProductFunctionSelection(pending);},120);
-}
-function paintProductFunctionResults(product){
-  var container=document.getElementById('productFieldsContainer');if(!container||!product)return;
-  container.querySelectorAll('[data-product-function-result]').forEach(function(node){
-    var key=node.getAttribute('data-product-function-result');
-    node.textContent='结果：'+(productFunctionDisplay(product,key)||'—');
-  });
-}
-function scheduleProductFunctionEvaluation(){clearTimeout(_productFunctionEvalTimer);_productFunctionEvalTimer=setTimeout(function(){refreshProductFunctionResults().catch(function(){});},180);}
-async function refreshProductFunctionResults(){
-  if(_productFunctionEvaluating){scheduleProductFunctionEvaluation();return;}
-  var serial=++_productFunctionEvalSerial,product=_worktimeDraft,engine=typeof _productWorkbookEngine!=='undefined'?_productWorkbookEngine:null;
-  if(!product||!document.getElementById('worktimeProductForm'))return;
-  if(!engine||!engine.ready||!engine.univerAPI||!engine.univerAPI.getActiveWorkbook){scheduleProductFunctionEvaluation();return;}
-  readDynamicProductFields(product);
-  var workbook=engine.univerAPI.getActiveWorkbook(),sheet=workbook&&workbook.getActiveSheet&&workbook.getActiveSheet();
-  if(!workbook||!sheet)return;
-  var unitId=typeof workbook.getId==='function'?workbook.getId():(typeof workbook.getUnitId==='function'?workbook.getUnitId():''),sheetId=typeof sheet.getSheetId==='function'?sheet.getSheetId():'';
-  if(!unitId||!sheetId)return;
-  var batch={},keys=[],row=0;
-  product.fieldResults=productFieldsObject(product.fieldResults);
-  productActiveFields(product).forEach(function(field){
-    if(field.type!=='formula')return;
-    var expression=productFormulaExpression(productFieldValue(product,field.key));
-    if(!expression){delete product.fieldResults[field.key];return;}
-    var reason=productFormulaRejection(expression);
-    if(reason){product.fieldResults[field.key]={display:'',error:reason};return;}
-    if(!batch[unitId])batch[unitId]={};if(!batch[unitId][sheetId])batch[unitId][sheetId]={};
-    batch[unitId][sheetId][row]={0:[expression]};keys.push({key:field.key,row:row});row++;
-  });
-  if(!keys.length){paintProductFunctionResults(product);return;}
-  _productFunctionEvaluating=true;
-  var result;
-  try{result=await engine.univerAPI.getFormula().executeFormulas(batch,8000);}catch(error){if(serial!==_productFunctionEvalSerial)return;keys.forEach(function(item){product.fieldResults[item.key]={display:'',error:'无法计算公式'};});paintProductFunctionResults(product);return;}
-  finally{_productFunctionEvaluating=false;}
-  if(serial!==_productFunctionEvalSerial||_worktimeDraft!==product)return;
-  keys.forEach(function(item){
-    var cell=result&&result[unitId]&&result[unitId][sheetId]&&result[unitId][sheetId][item.row]&&result[unitId][sheetId][item.row][0];
-    var entry=Array.isArray(cell)?cell[0]:cell,display=productFunctionFormat(entry&&Object.prototype.hasOwnProperty.call(entry,'value')?entry.value:entry);
-    product.fieldResults[item.key]=display?{display:display,error:''}:{display:'',error:'无法计算公式'};
-  });
-  paintProductFunctionResults(product);
 }
 
 var WORKTIME_PRODUCT_LIMIT=9999;
@@ -1916,7 +1800,7 @@ function openModal(html){
   document.getElementById('mask').classList.add('open');
 }
 function closeModal(force){if(force!==true&&requestWorktimeEditorClose())return;cleanupWorktimeEditorAfterClose();document.getElementById('mask').classList.remove('open');if(typeof flushWorktimeDeferredView==='function')flushWorktimeDeferredView();if(_pendingUrl){URL.revokeObjectURL(_pendingUrl);_pendingUrl=null;_pendingBlob=null;}}
-document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(typeof cancelProductFunctionPick==='function'&&cancelProductFunctionPick()){e.preventDefault();return;}closeModal();}});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
 document.getElementById('mask').addEventListener('click',function(e){if(e.target===this)closeModal();});
 
 
@@ -3069,8 +2953,9 @@ function worktimeProductList(){return (state.worktimeProducts||[]).filter(functi
 function worktimeRefreshForView(){if(typeof refreshWorktimeReviews==='function')refreshWorktimeReviews();}
 function worktimeMetric(label,value,unit){return '<div class="worktime-metric"><span>'+label+'</span><strong>'+formatWorktimeNumber(value)+'<small>'+unit+'</small></strong></div>';}
 function worktimeFacts(product){
+      ensureProductFieldSchema(product);
       var h='<dl class="worktime-facts">';
-      (product.fieldSchema||[]).forEach(function(field){if(['pn','name','totalBomHours','totalManpower'].indexOf(field.key)>=0)return;var value=field.type==='formula'?productFunctionDisplay(product,field.key):productFieldValue(product,field.key);var title=field.type==='formula'?String(productFieldValue(product,field.key)||''):'';h+='<div><dt>'+esc(field.label)+'</dt><dd'+(title?' title="'+esc(title)+'"':'')+'>'+esc(value==null||value===''?'—':value)+'</dd></div>';});return h+'</dl>';
+      (product.fieldSchema||[]).forEach(function(field){if(['pn','name','totalBomHours','totalManpower'].indexOf(field.key)>=0)return;var value=productFieldValue(product,field.key);h+='<div><dt>'+esc(field.label)+'</dt><dd>'+esc(value==null||value===''?'—':value)+'</dd></div>';});return h+'</dl>';
     }
 
 function worktimeProductStatusOptions(value){return [['new','新产品'],['mass','量产产品'],['stock','结存产品']].map(function(pair){return '<option value="'+pair[0]+'"'+(value===pair[0]?' selected':'')+'>'+pair[1]+'</option>';}).join('');}
@@ -3149,7 +3034,7 @@ function worktimeEditorHasChanges(){
   readWorktimeEditorDraft();return _productCloseFlushFailed||productFieldsComparable(_worktimeDraft)!==_productEditorBaselineFields||productWorkbookComparable(_worktimeDraft.workbookSnapshot)!==_productEditorBaselineBook;
 }
 function onProductFieldMutation(){syncWorktimePnValidation();var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;}
-function onProductWorkbookChanged(){var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;if(typeof scheduleProductFunctionEvaluation!=='function')return;if(typeof _productFunctionEvaluating!=='undefined'&&_productFunctionEvaluating){scheduleProductFunctionEvaluation();return;}if(typeof _productWorkbookEngine!=='undefined'&&_productWorkbookEngine&&_productWorkbookEngine.pendingEdit)return;scheduleProductFunctionEvaluation();}
+function onProductWorkbookChanged(){var error=document.getElementById('worktimeFormError');if(error)error.hidden=true;}
 function productFieldInputForKey(key){return Array.from(document.querySelectorAll('#productFieldsContainer [data-product-value-key]')).find(function(input){return input.dataset.productValueKey===key;})||null;}
 function syncWorktimePnValidation(){
   if(!_worktimeDraft)return '';var field=_worktimeDraft.fieldSchema.find(function(item){return item.key==='pn';});
@@ -3172,7 +3057,7 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
   mountProductFieldEditor(_worktimeDraft);installWorktimePnValidation();captureWorktimeEditorBaseline();
   document.getElementById('worktimeProductForm').addEventListener('submit',function(event){event.preventDefault();saveWorktimeProduct();});
   initProductWorkbookEditor(document.getElementById('productWorkbookHost'),_worktimeDraft).then(function(){
-    if(session!==_productEditorSession)return;readWorktimeEditorDraft();_productEditorBaselineBook=productWorkbookComparable(_worktimeDraft.workbookSnapshot);_productEditorLoading=false;scheduleProductFunctionEvaluation();
+    if(session!==_productEditorSession)return;readWorktimeEditorDraft();_productEditorBaselineBook=productWorkbookComparable(_worktimeDraft.workbookSnapshot);_productEditorLoading=false;
     var status=document.getElementById('productWorkbookStatus');if(status)status.textContent='';
   }).catch(function(error){if(session!==_productEditorSession)return;_productEditorLoading=false;document.getElementById('productWorkbookStatus').textContent='电子表格加载失败，请关闭后重试。';toast('电子表格加载失败');});
 }
@@ -3185,7 +3070,6 @@ async function saveWorktimeProduct(){
   try{
     var snapshot=await flushProductWorkbookEditor();if(snapshot)_worktimeDraft.workbookSnapshot=snapshot;
     readDynamicProductFields(_worktimeDraft);
-    try{await refreshProductFunctionResults();}catch(ignore){}
     var draft=JSON.parse(JSON.stringify(_worktimeDraft));ensureProductFieldSchema(draft);draft.productStatus=worktimeProductStatus(draft);
     var error=validateDynamicProductFields(draft)||syncWorktimePnValidation();if(error){worktimeShowFormError(error);return;}
     var existing=state.worktimeProducts.find(function(product){return product.id===draft.id;});
@@ -3747,7 +3631,6 @@ async function initProductWorkbookEditor(container,product){
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;}));
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditEnded,function(){engine.pendingEdit=false;notify();}));
         installSheetCellEditReveal(win);
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SelectionChanged,function(event){if(typeof acceptProductFunctionSelection==='function')acceptProductFunctionSelection(event);}));
         // 初始公式先完成，再向产品编辑器交付可比较的基线，避免重算被误认为用户改动。
         await engine.univerAPI.getFormula().onCalculationResultApplied(20000);
         await new Promise(function(done){win.requestAnimationFrame(function(){win.requestAnimationFrame(done);});});
@@ -3771,7 +3654,7 @@ function copyWorktimeProduct(id){
   (draft.processes||[]).forEach(function(process){process.id=uid();});ensureProductFieldSchema(draft);openWorktimeModal('',draft);logOperation('worktime_product_copy',{productId:id});
 }
 function worktimeExportSignature(product){return worktimeEditableFingerprint(product);}
-function productManualMetric(field,product){var raw=field.type==='formula'?productFunctionDisplay(product,field.key):productFieldValue(product,field.key),value=raw==null||raw===''?'—':field.type==='number'?formatWorktimeNumber(raw):String(raw);return '<div class="worktime-metric"><span>'+esc(field.label)+'</span><strong>'+esc(value)+'</strong></div>';}
+function productManualMetric(field,product){var raw=productFieldValue(product,field.key),value=raw==null||raw===''?'—':field.type==='number'?formatWorktimeNumber(raw):String(raw);return '<div class="worktime-metric"><span>'+esc(field.label)+'</span><strong>'+esc(value)+'</strong></div>';}
 function worktimeProductCard(product){
   var pn=productFieldIsActive(product,'pn')?String(product.pn==null?'':product.pn):'',name=productFieldIsActive(product,'name')?String(product.name==null?'':product.name):'';
   var totals=worktimeProductMetrics(product),due=worktimeReviewDueDate(product,state),status=worktimeProductStatus(product),metrics='';
