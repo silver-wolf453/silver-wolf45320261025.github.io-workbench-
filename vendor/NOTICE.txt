@@ -1,0 +1,21 @@
+Third-party components used by this workbench. They are stored in this
+repository and loaded with relative URLs. Opening the workbench does not
+require a CDN.
+
+Univer 1.4.0
+  Files: vendor/univer-1.4.0.js, vendor/univer-1.4.0.css
+  Source: https://github.com/dream-num/univer
+  License: Apache License, Version 2.0 (vendor/licenses/UNIVER-Apache-2.0.txt)
+  The JavaScript bundle also keeps the license notices of its dependencies,
+  including React (MIT).
+
+ExcelJS 4.4.0
+  File: vendor/exceljs-4.4.0.min.js
+  Source: https://github.com/exceljs/exceljs
+  License: MIT (vendor/licenses/EXCELJS-MIT.txt)
+  Copyright (c) 2014-2019 Guyon Roche
+  Dependency license notices that were already embedded in the browser bundle
+  are unchanged.
+
+The spreadsheet and Excel libraries are fetched when a product workbook is
+opened or when Excel import/export runs.
