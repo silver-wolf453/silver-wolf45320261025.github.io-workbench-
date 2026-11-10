@@ -532,8 +532,20 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
 .product-editor-v11 .worktime-editor-title-row h3{margin:0 4px 0 0}
 .product-editor-v11 .worktime-editor-title-row .icon-only{width:34px;min-width:34px;height:34px;padding:0}
 #mask.worktime-mask-fullscreen{align-items:stretch;justify-content:stretch}
-#modalBox.worktime-modal-fullscreen:has(#worktimeProductForm){width:100%;max-width:none!important;height:100dvh;max-height:none!important;border-radius:0;margin:0;overflow:auto}
-#modalBox.worktime-modal-fullscreen .product-editor-v11 #productWorkbookHost{height:75dvh;min-height:400px}
+#modalBox.worktime-modal-fullscreen:has(#worktimeProductForm){width:100%;max-width:none!important;height:100dvh;max-height:100dvh!important;border-radius:0;margin:0;overflow:hidden;display:flex;flex-direction:column;padding:10px 12px}
+#modalBox.worktime-modal-fullscreen .product-editor-v11{display:flex;flex-direction:column;flex:1;min-height:0;height:100%}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 form{display:flex;flex-direction:column;flex:1;min-height:0}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 .worktime-editor-heading{position:static;top:auto;margin-bottom:8px;padding:0 0 8px}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 form>.field,
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productFieldsContainer,
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productPnError,
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productFieldDesigner{display:none!important}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 .product-workbook-toolbar{margin:0 0 8px}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productWorkbookStatus:empty{display:none;margin:0}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productWorkbookHost{flex:1 1 auto;height:0!important;min-height:0!important}
+#modalBox.worktime-modal-fullscreen .product-editor-v11 #productWorkbookHost iframe{min-height:0!important;height:100%!important}
+.worktime-export-ops .worktime-delete.icon-only{width:30px;min-width:30px;height:30px;padding:0;flex:none}
+.worktime-export-ops .worktime-delete.icon-only svg{width:16px;height:16px}
 @media(max-width:599px){.product-editor-v11 #productWorkbookHost{height:70dvh;min-height:460px}.product-editor-v11 .worktime-editor-heading{top:-18px}.product-editor-v11 .worktime-editor-title-row{gap:6px}.product-editor-v11 .worktime-editor-title-row h3{font-size:16px}.product-editor-v11 .worktime-editor-title-row .icon-only{width:30px;min-width:30px;height:30px}}
 
 </style>
@@ -3005,7 +3017,7 @@ function syncWorktimePnValidation(){
   var hint=document.getElementById('productPnError');if(hint){hint.textContent=error;hint.hidden=!error;}return error;
 }
 function installWorktimePnValidation(){syncWorktimePnValidation();}
-function openWorktimeModal(id,copyDraft){
+function openWorktimeModal(id,copyDraft,tableFullscreen){
   if(_worktimeSaving)return;
   if(!id&&!worktimeCanCreateProduct(state)){toast('已达到 9999 个产品上限');return;}
   var original=id?state.worktimeProducts.find(function(product){return product.id===id&&!product.deleted;}):null;
@@ -3013,7 +3025,8 @@ function openWorktimeModal(id,copyDraft){
   _worktimeDraft=JSON.parse(JSON.stringify(copyDraft||original||{id:uid(),pn:'',name:'',spec:'',workHours:8,productCategory:'',projectCategory:'',version:'V1.0',date:todayStr(),modifiedBy:'',productStatus:'new',totalBomHours:0,totalManpower:0,processes:[],createdAt:now()}));
   ensureProductFieldSchema(_worktimeDraft);
   var caption=copyDraft?'复制产品工时':original?'编辑产品工时':'新建产品工时';
-  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"><button type="button" class="btn sm" onclick="document.getElementById(\'productExcelFile\').click()">导入 Excel</button><button type="button" class="btn sm" onclick="exportProductEditorExcel()">导出 Excel</button></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div><div class="modal-ops worktime-editor-ops"><button type="button" class="btn" onclick="closeModal()">取消</button></div></form></div>');
+  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"><button type="button" class="btn sm" onclick="document.getElementById(\'productExcelFile\').click()">导入 Excel</button><button type="button" class="btn sm" onclick="exportProductEditorExcel()">导出 Excel</button></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div></form></div>');
+  if(tableFullscreen)setWorktimeTableFullscreen(true);
   var session=++_productEditorSession;_productEditorLoading=true;
   mountProductFieldEditor(_worktimeDraft);installWorktimePnValidation();captureWorktimeEditorBaseline();
   document.getElementById('worktimeProductForm').addEventListener('submit',function(event){event.preventDefault();saveWorktimeProduct();});
@@ -3069,10 +3082,15 @@ function destroyWorktimeViewport(){
   if(typeof destroyProductFieldEditor==='function')destroyProductFieldEditor();
   var box=document.getElementById('modalBox'),mask=document.getElementById('mask');if(box)box.classList.remove('worktime-modal-fullscreen');if(mask)mask.classList.remove('worktime-mask-fullscreen');
 }
+function setWorktimeTableFullscreen(enabled){
+  var box=document.getElementById('modalBox');if(!box||!box.querySelector('#worktimeProductForm'))return;
+  enabled=!!enabled;box.classList.toggle('worktime-modal-fullscreen',enabled);document.getElementById('mask').classList.toggle('worktime-mask-fullscreen',enabled);
+  var button=document.getElementById('worktimeFullscreenButton');if(button){button.setAttribute('aria-pressed',String(enabled));button.title=enabled?'退出全屏':'全屏编辑';button.setAttribute('aria-label',enabled?'退出全屏':'全屏编辑');button.innerHTML=worktimeFullscreenIcon(enabled);}
+  resizeProductWorkbookEditor();
+}
 function toggleWorktimeFullscreen(){
   var box=document.getElementById('modalBox');if(!box||!box.querySelector('#worktimeProductForm'))return;
-  var enabled=box.classList.toggle('worktime-modal-fullscreen');document.getElementById('mask').classList.toggle('worktime-mask-fullscreen',enabled);
-  var button=document.getElementById('worktimeFullscreenButton');button.setAttribute('aria-pressed',String(enabled));button.title=enabled?'退出全屏':'全屏编辑';button.innerHTML=worktimeFullscreenIcon(enabled);resizeProductWorkbookEditor();
+  setWorktimeTableFullscreen(!box.classList.contains('worktime-modal-fullscreen'));
 }
 async function importProductExcelFile(input){
   var file=input.files&&input.files[0];if(!file||!_worktimeDraft)return;var session=_productEditorSession,previous=JSON.parse(JSON.stringify(_worktimeDraft)),replaced=false;
@@ -3593,7 +3611,7 @@ function worktimeProductCard(product){
   var bom=product.fieldSchema.find(function(field){return field.key==='totalBomHours';}),people=product.fieldSchema.find(function(field){return field.key==='totalManpower';});
   if(bom)metrics+=productManualMetric(bom,product);if(people)metrics+=productManualMetric(people,product);
   var subtitle=status==='stock'?'结存产品 · 默认不复测':!productFieldIsActive(product,'date')||!worktimeDay(product.date)?'未设置复测日期':due?'复判日期 '+due:'复测任务处理中';
-  return '<article class="card worktime-product" data-worktime-id="'+esc(product.id)+'"><div class="worktime-status-row"><label>产品状态</label><select class="worktime-card-status" data-product-id="'+esc(product.id)+'" aria-label="产品状态" onchange="setWorktimeProductStatus(this.dataset.productId,this.value)">'+worktimeProductStatusOptions(status)+'</select></div><div class="proj-top"><div class="worktime-product-heading">'+(pn?'<div class="worktime-pn">'+esc(pn)+'</div>':'')+'<h2>'+esc(name||pn||'产品工时')+'</h2></div><button class="iconbtn" data-product-id="'+esc(product.id)+'" onclick="openWorktimeModal(this.dataset.productId)" aria-label="编辑产品工时" title="编辑产品工时">'+icon('pencil')+'</button></div>'+worktimeFacts(product)+(metrics?'<div class="worktime-metrics">'+metrics+'</div>':'')+'<div class="worktime-product-footer"><span class="muted">'+esc(subtitle)+'</span><button class="btn sm" data-product-id="'+esc(product.id)+'" onclick="openWorktimeModal(this.dataset.productId)">打开工作簿</button></div><div class="worktime-export-ops"><button class="btn sm icon-only worktime-copy-product" data-product-id="'+esc(product.id)+'" onclick="copyWorktimeProduct(this.dataset.productId)" aria-label="复制产品工时" title="复制产品工时">'+worktimeCopySvg()+'</button><button class="btn sm worktime-export" data-product-id="'+esc(product.id)+'" onclick="exportWorktimeProduct(this.dataset.productId)">导出 Excel</button><button class="btn sm danger worktime-delete" data-product-id="'+esc(product.id)+'" onclick="deleteWorktimeProduct(this.dataset.productId)"'+(canDeleteWorktimeProduct(product)?'':' disabled title="请先导出当前内容"')+'>删除卡片</button></div></article>';
+  return '<article class="card worktime-product" data-worktime-id="'+esc(product.id)+'"><div class="worktime-status-row"><label>产品状态</label><select class="worktime-card-status" data-product-id="'+esc(product.id)+'" aria-label="产品状态" onchange="setWorktimeProductStatus(this.dataset.productId,this.value)">'+worktimeProductStatusOptions(status)+'</select></div><div class="proj-top"><div class="worktime-product-heading">'+(pn?'<div class="worktime-pn">'+esc(pn)+'</div>':'')+'<h2>'+esc(name||pn||'产品工时')+'</h2></div><button class="iconbtn" data-product-id="'+esc(product.id)+'" onclick="openWorktimeModal(this.dataset.productId)" aria-label="编辑产品工时" title="编辑产品工时">'+icon('pencil')+'</button></div>'+worktimeFacts(product)+(metrics?'<div class="worktime-metrics">'+metrics+'</div>':'')+'<div class="worktime-product-footer"><span class="muted">'+esc(subtitle)+'</span><button class="btn sm" data-product-id="'+esc(product.id)+'" onclick="openWorktimeModal(this.dataset.productId,null,true)">打开工作簿</button></div><div class="worktime-export-ops"><button class="btn sm icon-only worktime-copy-product" data-product-id="'+esc(product.id)+'" onclick="copyWorktimeProduct(this.dataset.productId)" aria-label="复制产品工时" title="复制产品工时">'+worktimeCopySvg()+'</button><button class="btn sm worktime-export" data-product-id="'+esc(product.id)+'" onclick="exportWorktimeProduct(this.dataset.productId)">导出 Excel</button><button class="btn sm danger icon-only worktime-delete" data-product-id="'+esc(product.id)+'" onclick="deleteWorktimeProduct(this.dataset.productId)" aria-label="删除卡片" title="'+(canDeleteWorktimeProduct(product)?'删除卡片':'请先导出当前内容')+'"'+(canDeleteWorktimeProduct(product)?'':' disabled')+'>'+icon('trash',16)+'</button></div></article>';
 }
 async function exportWorktimeProduct(id){
   var product=state.worktimeProducts.find(function(item){return item.id===id&&!item.deleted;});if(!product)return;
