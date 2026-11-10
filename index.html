@@ -546,7 +546,7 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
 #modalBox.worktime-modal-fullscreen .product-editor-v11 #productWorkbookHost iframe{min-height:0!important;height:100%!important}
 .worktime-export-ops .worktime-delete.icon-only{width:30px;min-width:30px;height:30px;padding:0;flex:none}
 .worktime-export-ops .worktime-delete.icon-only svg{width:16px;height:16px}
-@media(max-width:599px){.product-editor-v11 #productWorkbookHost{height:70dvh;min-height:460px}.product-editor-v11 .worktime-editor-heading{top:-18px}.product-editor-v11 .worktime-editor-title-row{gap:6px}.product-editor-v11 .worktime-editor-title-row h3{font-size:16px}.product-editor-v11 .worktime-editor-title-row .icon-only{width:30px;min-width:30px;height:30px}}
+@media(max-width:599px){.product-editor-v11 #productWorkbookHost{height:70dvh;min-height:460px}.product-editor-v11 .worktime-editor-heading{top:-18px}.product-editor-v11 .worktime-editor-title-row{gap:6px}.product-editor-v11 .worktime-editor-title-row h3{font-size:16px}.product-editor-v11 .worktime-editor-title-row .icon-only{width:30px;min-width:30px;height:30px}.product-editor-v11 #productWorkbookStatus:not(:empty){position:sticky;top:46px;z-index:6;margin:0 0 8px;padding:8px 10px;border-radius:8px;background:#eaf0ff;color:#1b44c0;font-weight:600}}
 
 </style>
 </head>
@@ -3059,6 +3059,7 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
   initProductWorkbookEditor(document.getElementById('productWorkbookHost'),_worktimeDraft).then(function(){
     if(session!==_productEditorSession)return;readWorktimeEditorDraft();_productEditorBaselineBook=productWorkbookComparable(_worktimeDraft.workbookSnapshot);_productEditorLoading=false;
     var status=document.getElementById('productWorkbookStatus');if(status)status.textContent='';
+    if(typeof revealPhoneWorkbook==='function')revealPhoneWorkbook();
   }).catch(function(error){if(session!==_productEditorSession)return;_productEditorLoading=false;document.getElementById('productWorkbookStatus').textContent='电子表格加载失败，请关闭后重试。';toast('电子表格加载失败');});
 }
 function worktimeShowFormError(message){var error=document.getElementById('worktimeFormError');if(error){error.textContent=message;error.hidden=false;error.scrollIntoView({block:'nearest'});}toast(message);}
@@ -3499,9 +3500,39 @@ function worktimeFullscreenIcon(expanded){
 var WORKBENCH_UNIVER_SCRIPT='vendor/univer-1.4.0.js?v=e226afc5378d';
 var WORKBENCH_UNIVER_STYLE='vendor/univer-1.4.0.css?v=e69863d9b27f';
 var WORKBENCH_EXCELJS_SCRIPT='vendor/exceljs-4.4.0.min.js?v=f4f230487d2d';
-var _excelJsPromise=null,_spreadsheetPrefetchStarted=false;
+var _excelJsPromise=null,_spreadsheetPrefetchStarted=false,_phoneSheetPreload=null,_phoneSheetProgress='';
 function workbenchAssetHref(path){return new URL(path,document.baseURI).href;}
 function workbenchHtmlAttr(value){return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function workbenchPhoneSheet(){return !!(window.matchMedia&&window.matchMedia('(max-width: 599px)').matches);}
+function phoneSheetStatus(text){
+  if(!workbenchPhoneSheet())return;
+  var status=document.getElementById('productWorkbookStatus');if(status)status.textContent=text;
+}
+function revealPhoneWorkbook(){
+  if(!workbenchPhoneSheet())return;
+  var modal=document.getElementById('modalBox'),anchor=document.getElementById('productWorkbookStatus')||document.getElementById('productWorkbookHost');
+  if(!modal||!anchor||modal.classList.contains('worktime-modal-fullscreen'))return;
+  var delta=anchor.getBoundingClientRect().top-modal.getBoundingClientRect().top-6;
+  if(Math.abs(delta)>8)modal.scrollTop+=delta;
+}
+function preloadPhoneSpreadsheet(){
+  if(_phoneSheetPreload)return _phoneSheetPreload;
+  var cssHref=workbenchAssetHref(WORKBENCH_UNIVER_STYLE),jsHref=workbenchAssetHref(WORKBENCH_UNIVER_SCRIPT);
+  fetch(cssHref).then(function(response){return response&&response.arrayBuffer?response.arrayBuffer():null;}).catch(function(){});
+  _phoneSheetPreload=(async function(){
+    var response=await fetch(jsHref);
+    if(!response||!response.ok||!response.body||!response.body.getReader)throw new Error('表格组件下载失败');
+    var total=Number(response.headers.get('content-length'))||0,reader=response.body.getReader(),received=0;
+    while(true){
+      var chunk=await reader.read();if(chunk.done)break;
+      received+=chunk.value.byteLength;
+      _phoneSheetProgress=total?('正在下载表格组件… '+Math.min(99,Math.round(received/total*100))+'%'):'正在下载表格组件…';
+      phoneSheetStatus(_phoneSheetProgress);
+    }
+    _phoneSheetProgress='';
+  })().catch(function(error){_phoneSheetPreload=null;throw error;});
+  return _phoneSheetPreload;
+}
 function prefetchWorkbenchAsset(path,asType){
   var href=workbenchAssetHref(path);
   if(document.querySelector('link[data-wb-prefetch="'+path+'"]'))return;
@@ -3510,6 +3541,7 @@ function prefetchWorkbenchAsset(path,asType){
   document.head.appendChild(link);
 }
 function prefetchWorkbenchSpreadsheet(){
+  if(workbenchPhoneSheet()){preloadPhoneSpreadsheet().catch(function(){});return;}
   if(_spreadsheetPrefetchStarted)return;_spreadsheetPrefetchStarted=true;
   prefetchWorkbenchAsset(WORKBENCH_UNIVER_SCRIPT,'script');
   prefetchWorkbenchAsset(WORKBENCH_UNIVER_STYLE,'style');
@@ -3608,6 +3640,14 @@ function disposeProductWorkbookEditor(){
 async function initProductWorkbookEditor(container,product){
   disposeProductWorkbookEditor();if(typeof container==='string')container=document.getElementById(container);if(!container)throw new Error('未找到工序编辑区域');
   prefetchWorkbenchSpreadsheet();
+  if(workbenchPhoneSheet()){
+    phoneSheetStatus(_phoneSheetProgress||'正在下载表格组件…');
+    revealPhoneWorkbook();
+    try{await preloadPhoneSpreadsheet();}catch(ignore){}
+    if(!container.isConnected)return;
+    phoneSheetStatus('正在打开电子表格…');
+    revealPhoneWorkbook();
+  }
   var scriptUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_SCRIPT)),styleUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_STYLE));
   var snapshot=product&&product.workbookSnapshot?worktimeWorkbookClone(product.workbookSnapshot):createLegacyProductWorkbook(product||{}),iframe=document.createElement('iframe'),serial=++_productWorkbookEngineSerial;
   iframe.className='product-univer-frame';iframe.title='产品工序电子表格';iframe.style.cssText='display:block;width:100%;height:100%;min-height:420px;border:0;background:white;color-scheme:light;';
