@@ -2337,6 +2337,15 @@ window.addEventListener('message',function(event){
   if(event.data.type==='trace'){var traceDetail=event.data.detail||{},traceName=event.data.event==='video'?'ecrs_video':event.data.event==='file'?'file_import':'ecrs_ui';traceDetail.source='ecrs';if(event.data.event&&traceName!=='ecrs_video')traceDetail.eventName=event.data.event;logOperation(traceName,traceDetail);return;}
   if(event.data.type==='request'&&event.source)event.source.postMessage({source:'wb-host',type:'projects',projects:state.ecrsProjects||[]},location.origin);
 });
+window.addEventListener('message',function(event){
+  if(!event.data||event.data.source!=='wb-sheet')return;
+  var frame=document.querySelector('.product-univer-frame');
+  if(!frame||event.source!==frame.contentWindow)return;
+  if(event.origin!==location.origin&&event.origin!=='null')return;
+  var phase=typeof event.data.phase==='string'?event.data.phase.slice(0,40):'';
+  if(event.data.type==='phase'){logWorkbookBoot(phase);if(phase==='iframe-start')workbookStatus('正在打开表格页面…');if(phase==='univer-script')workbookStatus('正在初始化表格组件…');return;}
+  if(event.data.type==='error'){var detail=operationFaultDetail({name:'Error',message:event.data.message,stack:event.data.stack});detail.source='iframe';if(phase)detail.label=phase;logOperation('page_error',detail);if(typeof _productEditorLoading!=='undefined'&&_productEditorLoading)workbookStatus('电子表格出错：'+(detail.message||'请关闭后重试'));}
+});
 var renderers={worktime:renderWorktime,'worktime-retest':renderWorktimeRetest,recycle:renderRecycle,home:renderHome,projects:renderProjects,tasks:renderTasks,ecrs:renderEcrs,risks:renderRisks,review:renderReview,data:renderData,mail:renderMail,appearance:renderAppearance,info:renderInfo};
 function renderAll(){refreshWorktimeReviews();if(typeof closeTaskStatusMenu==='function')closeTaskStatusMenu();var h=(location.hash||'#home').slice(1);renderers[h in renderers?h:'home']();syncRecycleButton();}
 function init(){
@@ -3091,7 +3100,7 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
     if(session!==_productEditorSession)return;readWorktimeEditorDraft();_productEditorBaselineBook=productWorkbookComparable(_worktimeDraft.workbookSnapshot);_productEditorLoading=false;
     var status=document.getElementById('productWorkbookStatus');if(status)status.textContent='';
     if(typeof revealPhoneWorkbook==='function')revealPhoneWorkbook();
-  }).catch(function(error){if(session!==_productEditorSession)return;_productEditorLoading=false;document.getElementById('productWorkbookStatus').textContent='电子表格加载失败，请关闭后重试。';toast('电子表格加载失败');});
+  }).catch(function(error){if(session!==_productEditorSession||(error&&error.name==='AbortError'))return;_productEditorLoading=false;var statusNode=document.getElementById('productWorkbookStatus');if(statusNode)statusNode.textContent='电子表格加载失败：'+(error&&error.message||'请关闭后重试');toast('电子表格加载失败');});
 }
 function worktimeShowFormError(message){var error=document.getElementById('worktimeFormError');if(error){error.textContent=message;error.hidden=false;error.scrollIntoView({block:'nearest'});}toast(message);}
 async function saveWorktimeProduct(options){
@@ -3541,6 +3550,22 @@ var WORKBENCH_EXCELJS_SCRIPT='vendor/exceljs-4.4.0.min.js?v=f4f230487d2d';
 var _excelJsPromise=null,_spreadsheetPrefetchStarted=false,_phoneSheetPreload=null,_phoneSheetProgress='';
 function workbenchAssetHref(path){return new URL(path,document.baseURI).href;}
 function workbenchHtmlAttr(value){return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function workbookStatus(text){var status=document.getElementById('productWorkbookStatus');if(status)status.textContent=text||'';}
+function logWorkbookBoot(phase,extra){
+  var detail={source:'worktime',status:'phase',label:String(phase||'boot').slice(0,40),durationMs:Math.max(0,Math.round(performance.now()-(_wbBootAt||performance.now())))};
+  if(extra&&Number.isInteger(extra.fileSize)&&extra.fileSize>=0)detail.fileSize=extra.fileSize;
+  if(extra&&Number.isInteger(extra.count)&&extra.count>=0)detail.count=extra.count;
+  if(extra&&extra.message)detail.message=String(extra.message).slice(0,240);
+  try{logOperation('workbook_open',detail);}catch(ignore){}
+}
+function workbookEngineSnapshot(snapshot){
+  if(!snapshot||typeof snapshot!=='object'||!snapshot.sheets||!snapshot.sheetOrder)return null;
+  var copy={};['id','name','appVersion','locale','styles','sheetOrder','sheets','resources'].forEach(function(key){if(snapshot[key]!==undefined)copy[key]=snapshot[key];});
+  return copy;
+}
+function workbookFrameBootProbe(){
+  return '(function(){function send(type,detail){try{parent.postMessage(Object.assign({source:"wb-sheet",type:type},detail||{}),"*");}catch(err){}}window.addEventListener("error",function(ev){send("error",{message:String(ev.message||""),stack:ev.error&&ev.error.stack?String(ev.error.stack):"",filename:String(ev.filename||"")});});window.addEventListener("unhandledrejection",function(ev){var reason=ev.reason;send("error",{message:reason&&reason.message?String(reason.message):String(reason||""),stack:reason&&reason.stack?String(reason.stack):""});});send("phase",{phase:"iframe-start"});})();';
+}
 function workbookFrameFullscreenPatch(){
   return '(function(){var rf=Element.prototype.requestFullscreen,ex=Document.prototype.exitFullscreen,fd=Object.getOwnPropertyDescriptor(Document.prototype,"fullscreenElement");if(fd&&fd.get){Object.defineProperty(document,"fullscreenElement",{configurable:true,get:function(){try{var p=window.parent&&window.parent.document,fe=window.frameElement;if(p&&fe&&p.fullscreenElement&&(p.fullscreenElement===fe||fe.contains(p.fullscreenElement)))return document.documentElement;}catch(err){}return fd.get.call(document);}});}Element.prototype.requestFullscreen=function(){try{if(window.frameElement&&window.frameElement.requestFullscreen)return window.frameElement.requestFullscreen();}catch(err){}return rf.apply(this,arguments);};Document.prototype.exitFullscreen=function(){try{var p=window.parent&&window.parent.document;if(p&&p.fullscreenElement)return p.exitFullscreen();}catch(err){}return ex.apply(this,arguments);};})();';
 }
@@ -3693,6 +3718,7 @@ function disposeProductWorkbookEditor(){
   var engine=_productWorkbookEngine;_productWorkbookEngine=null;_productWorkbookEngineSerial++;
   if(!engine)return;engine.disposed=true;
   if(engine.initTimer)clearTimeout(engine.initTimer);
+  if(engine.bootHint)clearInterval(engine.bootHint);
   if(engine.__wbImageTimer)clearInterval(engine.__wbImageTimer);
   if(engine.openedAt)logOperation('workbook_close',{source:'worktime',status:engine.ready?'closed':'failed',durationMs:Math.max(0,Math.round(performance.now()-engine.openedAt))});
   if(!engine.ready&&engine.rejectReady)engine.rejectReady(new DOMException('表格已关闭','AbortError'));
@@ -3713,54 +3739,66 @@ async function initProductWorkbookEditor(container,product){
     revealPhoneWorkbook();
   }
   var scriptUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_SCRIPT)),styleUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_STYLE));
-  var snapshot=product&&product.workbookSnapshot?worktimeWorkbookClone(product.workbookSnapshot):createLegacyProductWorkbook(product||{}),iframe=document.createElement('iframe'),serial=++_productWorkbookEngineSerial;
-  var sheetImages=snapshot.workbenchImages||[];delete snapshot.workbenchImages;
+  _wbBootAt=performance.now();logWorkbookBoot('clone-start',{count:(product&&product.workbookHistory||[]).length});workbookStatus('正在读取工作簿…');
+  var snapshot;try{snapshot=product&&product.workbookSnapshot?worktimeWorkbookClone(product.workbookSnapshot):createLegacyProductWorkbook(product||{});}catch(error){logWorkbookBoot('clone-failed',{message:error&&error.message});snapshot=createLegacyProductWorkbook(product||{});}
+  var sheetImages=Array.isArray(snapshot.workbenchImages)?snapshot.workbenchImages:[];delete snapshot.workbenchImages;
+  var savedExcel=snapshot.workbenchExcel,savedMeta=snapshot.workbenchProductMetadata;
+  logWorkbookBoot('clone-done',{count:sheetImages.length,fileSize:Math.min(2000000000,(product&&product.workbookHistory||[]).length*1000+sheetImages.length)});
+  var iframe=document.createElement('iframe'),serial=++_productWorkbookEngineSerial;
   iframe.className='product-univer-frame';iframe.title='产品工序电子表格';iframe.allow='fullscreen';iframe.setAttribute('allowfullscreen','');iframe.style.cssText='display:block;width:100%;height:100%;min-height:420px;border:0;background:white;color-scheme:light;';
-  var openedAt=performance.now();
-  var engine={iframe:iframe,container:container,serial:serial,openedAt:openedAt,extras:{workbenchExcel:snapshot.workbenchExcel,workbenchProductMetadata:snapshot.workbenchProductMetadata,workbenchImages:sheetImages},listeners:[],ready:false,disposed:false,pendingEdit:false};
-  _productWorkbookEngine=engine;container.replaceChildren(iframe);
+  var openedAt=_wbBootAt;
+  var engine={iframe:iframe,container:container,serial:serial,openedAt:openedAt,extras:{workbenchExcel:savedExcel,workbenchProductMetadata:savedMeta,workbenchImages:sheetImages},listeners:[],ready:false,disposed:false,pendingEdit:false,_iframeLoaded:false};
+  _productWorkbookEngine=engine;container.replaceChildren(iframe);workbookStatus('正在下载表格组件…');logWorkbookBoot('srcdoc');
   engine.readyPromise=new Promise(function(resolve,reject){
-    // 组件改为打开工作簿时下载，手机弱网需要比内嵌脚本更长的初始化时间。
     var phases={iframe:0,steady:0,formula:0,tools:0,ready:0};
-    var timer=setTimeout(function(){reject(new Error('表格初始化超时，请重新打开产品'));},120000);engine.initTimer=timer;engine.rejectReady=reject;
+    function phaseMark(name){var ms=Math.round(performance.now()-openedAt);if(name==='iframe')phases.iframe=ms;else if(name.indexOf('steady')===0)phases.steady=ms;else if(name.indexOf('formula')===0)phases.formula=ms;else if(name.indexOf('tools')===0)phases.tools=ms;logWorkbookBoot(name);}
+    var timer=setTimeout(function(){workbookStatus('表格初始化超时，请关闭后重试');reject(new Error('表格初始化超时，请重新打开产品'));},45000);engine.initTimer=timer;engine.rejectReady=reject;
+    engine.bootHint=setInterval(function(){if(engine.disposed||engine.ready){clearInterval(engine.bootHint);return;}var sec=Math.round((performance.now()-openedAt)/1000);workbookStatus(engine._iframeLoaded?'正在初始化表格… '+sec+'s':'正在下载表格组件… '+sec+'s');},1000);
     iframe.onload=async function(){
       if(engine.disposed||_productWorkbookEngine!==engine){clearTimeout(timer);reject(new Error('表格已关闭'));return;}
-      phases.iframe=Math.round(performance.now()-openedAt);
-      installWorkbookInteractionLog(iframe.contentDocument);
+      engine._iframeLoaded=true;phaseMark('iframe');workbookStatus('正在初始化表格…');
       try{
         var win=iframe.contentWindow,runtime=win.WorkbenchUniver;if(!runtime)throw new Error('表格组件加载失败');
         var created=runtime.create('univerRoot');engine.univer=created.univer;engine.univerAPI=created.univerAPI;
-        engine.workbook=engine.univerAPI.createWorkbook(snapshot);
-        await new Promise(function(done){
-          if(engine.univerAPI.getCurrentLifecycleStage()>=engine.univerAPI.Enum.LifecycleStages.Steady){done();return;}
-          var lifecycle=engine.univerAPI.addEvent(engine.univerAPI.Event.LifeCycleChanged,function(event){if(event.stage===engine.univerAPI.Enum.LifecycleStages.Steady){lifecycle.dispose();done();}});engine.listeners.push(lifecycle);
+        var engineSnapshot=workbookEngineSnapshot(snapshot)||createLegacyProductWorkbook(product||{});
+        try{engine.workbook=engine.univerAPI.createWorkbook(engineSnapshot);}catch(error){logWorkbookBoot('workbook-fallback',{message:error&&error.message});engine.workbook=engine.univerAPI.createWorkbook(createLegacyProductWorkbook(product||{}));workbookStatus('原工作簿无法读取，已打开空白表');}
+        var steadyResult=await new Promise(function(done){
+          var finished=false;function finish(value){if(finished)return;finished=true;done(value);}
+          try{if(engine.univerAPI.getCurrentLifecycleStage()>=engine.univerAPI.Enum.LifecycleStages.Steady){finish('ready');return;}}catch(ignore){}
+          try{var lifecycle=engine.univerAPI.addEvent(engine.univerAPI.Event.LifeCycleChanged,function(event){if(event.stage===engine.univerAPI.Enum.LifecycleStages.Steady){try{lifecycle.dispose();}catch(ignore){}finish('ready');}});engine.listeners.push(lifecycle);}catch(ignore){finish('error');return;}
+          setTimeout(function(){finish('timeout');},8000);
         });
-        phases.steady=Math.round(performance.now()-openedAt);
+        phaseMark(steadyResult==='ready'?'steady':'steady-timeout');
         function notify(){if(engine.ready&&!engine.disposed&&_productWorkbookEngine===engine&&typeof window.onProductWorkbookChanged==='function')window.onProductWorkbookChanged();}
         var mutationCount=0,mutationTimer=0;
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){
-          var commandId=String(event&&event.id||'');
-          if(!engine.pendingEdit&&(event.type===2||/mutation/.test(commandId)))notify();
-          if(/mutation/.test(commandId)||event.type===2){mutationCount++;if(!mutationTimer)mutationTimer=setTimeout(function(){var count=mutationCount;mutationCount=0;mutationTimer=0;if(count)logOperation('workbook_command',{source:'univer',command:'mutation',count:count});},2000);return;}
-          logThrottled('workbook_command',{source:'univer',command:commandId.slice(0,80)},200,'cmd:'+commandId);
-        }));
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;}));
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditEnded,function(){engine.pendingEdit=false;notify();}));
-        installSheetCellEditReveal(win);
-        // 初始公式先完成，再向产品编辑器交付可比较的基线，避免重算被误认为用户改动。
-        await engine.univerAPI.getFormula().onCalculationResultApplied(20000);
-        phases.formula=Math.round(performance.now()-openedAt);
+        try{
+          engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){
+            var commandId=String(event&&event.id||'');
+            if(!engine.pendingEdit&&(event.type===2||/mutation/.test(commandId)))notify();
+            if(/mutation/.test(commandId)||event.type===2){mutationCount++;if(!mutationTimer)mutationTimer=setTimeout(function(){var count=mutationCount;mutationCount=0;mutationTimer=0;if(count)logOperation('workbook_command',{source:'univer',command:'mutation',count:count});},2000);return;}
+            logThrottled('workbook_command',{source:'univer',command:commandId.slice(0,80)},200,'cmd:'+commandId);
+          }));
+          engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;}));
+          engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditEnded,function(){engine.pendingEdit=false;notify();}));
+          installSheetCellEditReveal(win);
+          try{installWorkbookInteractionLog(iframe.contentDocument);}catch(ignore){}
+        }catch(error){logWorkbookBoot('listeners-failed',{message:error&&error.message});}
+        var formula=engine.univerAPI.getFormula&&engine.univerAPI.getFormula();
+        if(formula&&formula.onCalculationResultApplied){
+          try{await Promise.race([formula.onCalculationResultApplied(8000),new Promise(function(_,rejectWait){setTimeout(function(){rejectWait(new Error('公式计算等待超时'));},9000);})]);phaseMark('formula');}
+          catch(error){phaseMark('formula-timeout');logWorkbookBoot('formula-timeout',{message:error&&error.message});}
+        }else phaseMark('formula-skip');
         await new Promise(function(done){win.requestAnimationFrame(function(){win.requestAnimationFrame(done);});});
-        engine.ready=true;clearTimeout(timer);
-        if(typeof installSheetTools==='function')installSheetTools(engine);
-        phases.tools=Math.round(performance.now()-openedAt);
-        if(typeof ResizeObserver==='function'){engine.resizeObserver=new ResizeObserver(resizeProductWorkbookEditor);engine.resizeObserver.observe(container);}
+        engine.ready=true;clearTimeout(timer);if(engine.bootHint)clearInterval(engine.bootHint);
+        try{if(typeof installSheetTools==='function')installSheetTools(engine);}catch(error){logWorkbookBoot('tools-failed',{message:error&&error.message});}
+        phaseMark('tools');
+        try{if(typeof ResizeObserver==='function'){engine.resizeObserver=new ResizeObserver(resizeProductWorkbookEditor);engine.resizeObserver.observe(container);}}catch(ignore){}
         phases.ready=Math.round(performance.now()-openedAt);
         logOperation('workbook_open',{source:'worktime',status:'ready',durationMs:phases.ready,memoryMb:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):0,phases:'iframe='+phases.iframe+',steady='+phases.steady+',formula='+phases.formula+',tools='+phases.tools+',ready='+phases.ready});
         resolve(engine);
-      }catch(error){clearTimeout(timer);var failed=operationFaultDetail(error);failed.source='worktime';failed.durationMs=Math.max(0,Math.round(performance.now()-openedAt));failed.phases='iframe='+phases.iframe+',steady='+phases.steady+',formula='+phases.formula+',tools='+phases.tools;logOperation('workbook_open',failed);reject(error);}
+      }catch(error){clearTimeout(timer);if(engine.bootHint)clearInterval(engine.bootHint);var failed=operationFaultDetail(error);failed.source='worktime';failed.durationMs=Math.max(0,Math.round(performance.now()-openedAt));failed.label='boot-failed';failed.phases='iframe='+phases.iframe+',steady='+phases.steady+',formula='+phases.formula+',tools='+phases.tools;logOperation('workbook_open',failed);workbookStatus('电子表格加载失败：'+(failed.message||'请关闭后重试'));reject(error);}
     };
-    iframe.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="'+styleUrl+'"><style>html,body,#univerRoot{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:Microsoft YaHei,Arial,sans-serif}</style></head><body><div id="univerRoot"></div><script>'+workbookFrameFullscreenPatch()+'<\/script><script src="'+scriptUrl+'"><\/script></body></html>';
+    iframe.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="'+styleUrl+'"><style>html,body,#univerRoot{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:Microsoft YaHei,Arial,sans-serif}</style></head><body><div id="univerRoot"></div><script>'+workbookFrameBootProbe()+'<\/script><script>'+workbookFrameFullscreenPatch()+'<\/script><script src="'+scriptUrl+'" onload="parent.postMessage({source:\'wb-sheet\',type:\'phase\',phase:\'univer-script\'},\'*\')" onerror="parent.postMessage({source:\'wb-sheet\',type:\'error\',message:\'表格组件下载失败\'},\'*\')"><\/script></body></html>';
   });
   return engine.readyPromise;
 }
@@ -3795,7 +3833,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.14.3';
+var WORKBENCH_BUILD='2026.11.14.4';
 /* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;
