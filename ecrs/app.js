@@ -116,18 +116,46 @@
     project.actions=project.actions.filter(function(action){return action.id!==id;});render();
   });
 
+  function mimeFor(name,fallback){
+    var lower=String(name||'').toLowerCase();
+    if(lower.endsWith('.webm'))return 'video/webm';
+    if(lower.endsWith('.ogg')||lower.endsWith('.ogv'))return 'video/ogg';
+    if(lower.endsWith('.mp4')||lower.endsWith('.m4v'))return 'video/mp4';
+    return fallback&&fallback.indexOf('video/')===0?fallback:'video/mp4';
+  }
+  function showVideo(blob,name){
+    if(!blob)return Promise.reject(new Error('没有视频数据'));
+    var type=blob.type&&blob.type.indexOf('video/')===0?blob.type:mimeFor(name,blob.type);
+    var typed=blob.type===type?blob:new Blob([blob],{type:type});
+    if(player._url)URL.revokeObjectURL(player._url);
+    player._url=URL.createObjectURL(typed);
+    player.preload='auto';player.playsInline=true;player.muted=false;
+    player.src=player._url;
+    player.load();
+    return new Promise(function(resolve,reject){
+      function done(){player.removeEventListener('loadeddata',done);player.removeEventListener('error',fail);resolve();}
+      function fail(){player.removeEventListener('loadeddata',done);player.removeEventListener('error',fail);var code=player.error&&player.error.code;reject(new Error(code===4?'浏览器无法解码该视频，请使用 H.264 的 MP4 或 VP8/VP9 的 WebM':'视频加载失败'));}
+      if(player.readyState>=2){resolve();return;}
+      player.addEventListener('loadeddata',done);player.addEventListener('error',fail);
+    });
+  }
   document.getElementById('videoFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
     project.videoName=file.name;project.videoKey='video_'+project.id+'_'+Date.now().toString(36);
-    player.src=URL.createObjectURL(file);
-    storeVideo(project.videoKey,file).catch(function(){project.videoKey='';});
+    var typed=file.type&&file.type.indexOf('video/')===0?file:new File([file],file.name,{type:mimeFor(file.name)});
+    showVideo(typed,file.name).catch(function(error){alert(error.message||'视频无法播放');});
+    storeVideo(project.videoKey,typed).catch(function(){project.videoKey='';});
   };
   SPEEDS.forEach(function(speed){
     var button=document.createElement('button');button.type='button';button.className='btn';button.textContent=speed+'x';button.setAttribute('aria-pressed',speed===1?'true':'false');
     button.onclick=function(){player.playbackRate=speed;document.querySelectorAll('#speeds button').forEach(function(item){item.setAttribute('aria-pressed',item===button?'true':'false');});};
     document.getElementById('speeds').appendChild(button);
   });
-  document.getElementById('play').onclick=function(){player.play();};
+  document.getElementById('play').onclick=function(){
+    if(!player.currentSrc&&!player.src){alert('请先导入视频');return;}
+    var pending=player.play();
+    if(pending&&typeof pending.catch==='function')pending.catch(function(error){alert('无法播放：'+(error&&error.message?error.message:'浏览器拒绝了播放'));});
+  };
   document.getElementById('pause').onclick=function(){player.pause();};
   function step(sign){var amount=Number(document.getElementById('nudge').value)||1/project.fps;player.pause();player.currentTime=Math.max(0,player.currentTime+sign*amount);render();}
   document.getElementById('back').onclick=function(){step(-1);};
@@ -173,7 +201,7 @@
     var id=event.target.getAttribute('data-open');if(!id)return;
     var item=archive.filter(function(entry){return entry.id===id;})[0];if(!item)return;
     project=clone(item);render();
-    if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)player.src=URL.createObjectURL(blob);});
+    if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)return showVideo(blob,item.videoName||project.videoName);}).catch(function(error){alert(error.message||'无法恢复本机视频，请重新导入');});
   });
 
   document.getElementById('exportExcel').onclick=function(){
