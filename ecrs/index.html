@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECRS 视频动作分析</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="ecrs">
+  <section class="panel">
+    <h1>ECRS 动作分析</h1>
+    <p class="muted">导入浏览器可播放的视频（MP4、WebM 等）。视频只留在本机，同步和 JSON 只包含分析数据。</p>
+    <input id="videoFile" type="file" accept="video/mp4,video/webm,video/ogg,video/*">
+    <h2>项目资料</h2>
+    <div id="fields"></div>
+    <div class="row"><input id="newField" type="text" placeholder="新字段名称"><button class="btn" id="addField" type="button">添加字段</button></div>
+    <h2>项目存档</h2>
+    <div class="row">
+      <button class="btn primary" id="saveLocal" type="button">保存到本机</button>
+      <button class="btn" id="saveSync" type="button">同步到工作台</button>
+      <button class="btn" id="exportJson" type="button">导出 JSON</button>
+      <button class="btn" id="importJson" type="button">导入 JSON</button>
+    </div>
+    <input id="jsonFile" type="file" accept="application/json,.json" hidden>
+    <div id="archive"></div>
+    <p class="footer">时间轴与分段标注改编自 MIT 许可的 arxiver/video-annotator（Copyright (c) 2022 rrrohamed）。许可证见 VIDEO_ANNOTATOR_MIT.txt。</p>
+  </section>
+  <section class="panel">
+    <video id="player" controls></video>
+    <div class="row">
+      <button class="btn" id="play" type="button">播放</button>
+      <button class="btn" id="pause" type="button">暂停</button>
+      <span class="speeds" id="speeds"></span>
+      <button class="btn" id="back" type="button">上一帧</button>
+      <button class="btn" id="forward" type="button">下一帧</button>
+      <label>微调秒数 <input id="nudge" type="number" step="0.01" value="0.04" style="width:80px"></label>
+      <span id="clock">0.00s</span>
+    </div>
+    <div class="timeline" id="timeline"></div>
+    <div class="row">
+      <button class="btn primary" id="markStart" type="button">标记开始</button>
+      <button class="btn" id="markEnd" type="button">标记结束</button>
+      <button class="btn" id="markOther" type="button">插入重叠动作</button>
+      <button class="btn primary" id="exportExcel" type="button">导出 Excel</button>
+    </div>
+    <h2>动作明细</h2>
+    <div id="table"></div>
+    <h2>时间统计</h2>
+    <div class="stats" id="stats"></div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
