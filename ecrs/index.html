@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
-<link rel="stylesheet" href="app.css?v=2026.11.14.2">
+<link rel="stylesheet" href="app.css?v=2026.11.14.5">
 </head>
 <body>
 <div class="ecrs">
@@ -28,7 +28,17 @@
   </section>
   <section class="panel">
     <video id="player" controls playsinline preload="metadata"></video>
+    <canvas id="hevcCanvas" hidden></canvas>
     <p id="videoStatus" class="muted" role="status"></p>
+    <div id="videoFix" hidden>
+      <p id="videoFixText"></p>
+      <div class="row">
+        <button class="btn primary" id="videoTranscode" type="button" hidden>转为 H.264 并播放</button>
+        <button class="btn" id="videoCancel" type="button" hidden>取消转码</button>
+      </div>
+      <progress id="videoProgress" max="1" value="0" hidden></progress>
+      <p id="videoEta" class="muted"></p>
+    </div>
     <div class="row">
       <button class="btn" id="play" type="button">播放</button>
       <button class="btn" id="pause" type="button">暂停</button>
@@ -51,6 +61,8 @@
     <div class="stats" id="stats"></div>
   </section>
 </div>
-<script src="app.js?v=2026.11.14.2"></script>
+<script src="mp4.js?v=2026.11.14.5"></script>
+<script src="hevc.js?v=2026.11.14.5"></script>
+<script src="app.js?v=2026.11.14.5"></script>
 </body>
 </html>
