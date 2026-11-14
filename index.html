@@ -1603,22 +1603,25 @@ function pushCloud(){
   return pullCloud()
     .then(function(remote){mergeRemote(remote);})            // 先并入云端独有数据
     .then(function(){
-      var body=JSON.stringify({files:{'workbench.json':{content:JSON.stringify(state)}}});
-      return fetch('https://api.github.com/gists/'+syn.gistId,{method:'PATCH',headers:{'Authorization':'token '+syn.token,'Content-Type':'application/json'},body:body});
+      var content;try{content=JSON.stringify(state);}catch(error){var failed=new TypeError('同步数据无法序列化：'+(error&&error.message?error.message:'循环引用'));if(error&&error.stack)failed.stack=error.stack;throw failed;}
+      var body=JSON.stringify({files:{'workbench.json':{content:content}}});
+      return fetch('https://api.github.com/gists/'+syn.gistId,{method:'PATCH',headers:{'Authorization':'token '+syn.token,'Content-Type':'application/json','Accept':'application/vnd.github+json'},body:body});
     })
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
     .then(function(){localStorage.setItem('wb_sync_at',new Date().toLocaleString('zh-CN'));});
 }
 function pullCloud(){
   var syn=getSync(); if(!syn.gistId||!syn.token)return Promise.resolve(null);
-  return fetch('https://api.github.com/gists/'+syn.gistId,{headers:{'Authorization':'token '+syn.token}})
+  return fetch('https://api.github.com/gists/'+syn.gistId,{headers:{'Authorization':'token '+syn.token,'Accept':'application/vnd.github+json'}})
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(g){
-      var file=g.files&&g.files['workbench.json'];if(!file)return null;
-      if(!file.truncated)return JSON.parse(file.content);
-      var raw=new URL(file.raw_url);
+      var file=g&&g.files&&g.files['workbench.json'];if(!file)return null;
+      if(!file.truncated&&typeof file.content==='string')return JSON.parse(file.content);
+      if(typeof file.raw_url!=='string'||!file.raw_url)throw new Error('云端文件超过接口直接返回的大小，且没有原始地址');
+      var raw;try{raw=new URL(file.raw_url);}catch(error){throw new Error('云端原始地址无效');}
       if(raw.protocol!=='https:'||['gist.githubusercontent.com','raw.githubusercontent.com'].indexOf(raw.hostname)<0)throw new Error('无法读取完整云端文件');
-      return fetch(raw.href,{headers:{'Authorization':'token '+syn.token}}).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();});
+      // 密钥 gist 的原始地址无需令牌即可读取。带上 Authorization 会触发跨域预检，gist.githubusercontent.com 拒绝后浏览器只给出 TypeError: Failed to fetch。
+      return fetch(raw.href).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();});
     });
 }
 // 按 id 逐条合并：updatedAt 较新的一方为准；软删除墓碑随同步传播，旧数据不得复活已删项
@@ -1634,6 +1637,7 @@ function mergeById(localList, remoteList){
 function mergeRemote(remote){
   if(!remote||!Array.isArray(remote.tasks))return 0;
   remote=migrate(remote);
+  if(!remote||!remote.worktimeSettings||!state||!state.worktimeSettings||!Array.isArray(state.worktimeProducts))return 0;
   var before=state.tasks.length+state.projects.length+state.worktimeProducts.length;
   state.tasks=mergeById(state.tasks,remote.tasks);
   state.projects=mergeById(state.projects,remote.projects);
@@ -2323,12 +2327,14 @@ function renderInfo(){
 /* ================= 启动 ================= */
 function renderEcrs(){
   var view=document.getElementById('view-ecrs');
-  view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" src="'+workbenchAssetHref('ecrs/index.html')+'"></iframe>';
+  view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" allow="autoplay; fullscreen; picture-in-picture" src="'+workbenchAssetHref('ecrs/index.html?v='+WORKBENCH_BUILD)+'"></iframe>';
 }
 window.addEventListener('message',function(event){
   if(event.origin!==location.origin||!event.data||event.data.source!=='wb-ecrs')return;
   if(!Array.isArray(state.ecrsProjects))state.ecrsProjects=[];
   if(event.data.type==='save'&&Array.isArray(event.data.projects)){state.ecrsProjects=event.data.projects;save().then(function(){if(typeof toast==='function')toast('ECRS 分析数据已同步到工作台');});}
+  if(event.data.type==='video-error'){var detail=operationFaultDetail({name:event.data.errorName||'Error',message:event.data.message,stack:event.data.stack});detail.source='ecrs';detail.eventName='error';if(Number.isInteger(event.data.code))detail.media=event.data.code;logOperation('ecrs_video',detail);return;}
+  if(event.data.type==='trace'){var traceDetail=event.data.detail||{},traceName=event.data.event==='video'?'ecrs_video':event.data.event==='file'?'file_import':'ecrs_ui';traceDetail.source='ecrs';if(event.data.event&&traceName!=='ecrs_video')traceDetail.eventName=event.data.event;logOperation(traceName,traceDetail);return;}
   if(event.data.type==='request'&&event.source)event.source.postMessage({source:'wb-host',type:'projects',projects:state.ecrsProjects||[]},location.origin);
 });
 var renderers={worktime:renderWorktime,'worktime-retest':renderWorktimeRetest,recycle:renderRecycle,home:renderHome,projects:renderProjects,tasks:renderTasks,ecrs:renderEcrs,risks:renderRisks,review:renderReview,data:renderData,mail:renderMail,appearance:renderAppearance,info:renderInfo};
@@ -3542,7 +3548,7 @@ function ensureSheetTools(){
   if(window.wbSheetToolsReady)return Promise.resolve();
   if(window._sheetToolsPromise)return window._sheetToolsPromise;
   window._sheetToolsPromise=new Promise(function(resolve,reject){
-    var script=document.createElement('script');script.src=workbenchAssetHref('sheet-tools.js');script.async=true;
+    var script=document.createElement('script');script.src=workbenchAssetHref('sheet-tools.js?v='+WORKBENCH_BUILD);script.async=true;
     script.onload=function(){resolve();};script.onerror=function(){window._sheetToolsPromise=null;reject(new Error('表格工具加载失败'));};
     document.head.appendChild(script);
   });
@@ -3677,10 +3683,18 @@ function installSheetCellEditReveal(win){
     revealPendingSheetCellEdit(typeof _productWorkbookEngine!=='undefined'?_productWorkbookEngine:null);
   },true);
 }
+function installWorkbookInteractionLog(doc){
+  if(!doc||doc.__wbInteractionLog)return;doc.__wbInteractionLog=true;
+  doc.addEventListener('click',function(event){var detail=operationControlDetail(event.target);if(detail.secret)detail.label='';detail.source='univer';logOperation('workbook_ui',detail);},true);
+  doc.addEventListener('change',function(event){var input=event.target,detail=operationControlDetail(input);if(input&&input.type==='file'&&input.files&&input.files[0]){var imported=operationFileDetail(input.files[0]);imported.count=input.files.length;imported.target=detail.target;imported.source='univer';logOperation('file_import',imported);return;}if(!detail.secret)detail.valueLength=String(input&&input.value||'').length;detail.source='univer';logOperation('ui_change',detail);},true);
+  doc.addEventListener('keydown',function(event){var shortcut=event.ctrlKey||event.metaKey||event.altKey||event.key==='Escape'||event.key==='Enter';if(!shortcut)return;var detail=operationControlDetail(event.target);detail.source='univer';detail.combo=[event.ctrlKey?'Ctrl':'',event.metaKey?'Meta':'',event.altKey?'Alt':'',event.shiftKey?'Shift':'',detail.secret&&event.key.length===1?'(redacted)':event.key].filter(Boolean).join('+');logOperation('ui_shortcut',detail);},true);
+}
 function disposeProductWorkbookEditor(){
   var engine=_productWorkbookEngine;_productWorkbookEngine=null;_productWorkbookEngineSerial++;
   if(!engine)return;engine.disposed=true;
   if(engine.initTimer)clearTimeout(engine.initTimer);
+  if(engine.__wbImageTimer)clearInterval(engine.__wbImageTimer);
+  if(engine.openedAt)logOperation('workbook_close',{source:'worktime',status:engine.ready?'closed':'failed',durationMs:Math.max(0,Math.round(performance.now()-engine.openedAt))});
   if(!engine.ready&&engine.rejectReady)engine.rejectReady(new DOMException('表格已关闭','AbortError'));
   if(engine.resizeObserver)engine.resizeObserver.disconnect();
   (engine.listeners||[]).forEach(function(listener){try{listener.dispose();}catch(ignore){}});
@@ -3702,13 +3716,17 @@ async function initProductWorkbookEditor(container,product){
   var snapshot=product&&product.workbookSnapshot?worktimeWorkbookClone(product.workbookSnapshot):createLegacyProductWorkbook(product||{}),iframe=document.createElement('iframe'),serial=++_productWorkbookEngineSerial;
   var sheetImages=snapshot.workbenchImages||[];delete snapshot.workbenchImages;
   iframe.className='product-univer-frame';iframe.title='产品工序电子表格';iframe.allow='fullscreen';iframe.setAttribute('allowfullscreen','');iframe.style.cssText='display:block;width:100%;height:100%;min-height:420px;border:0;background:white;color-scheme:light;';
-  var engine={iframe:iframe,container:container,serial:serial,extras:{workbenchExcel:snapshot.workbenchExcel,workbenchProductMetadata:snapshot.workbenchProductMetadata,workbenchImages:sheetImages},listeners:[],ready:false,disposed:false,pendingEdit:false};
+  var openedAt=performance.now();
+  var engine={iframe:iframe,container:container,serial:serial,openedAt:openedAt,extras:{workbenchExcel:snapshot.workbenchExcel,workbenchProductMetadata:snapshot.workbenchProductMetadata,workbenchImages:sheetImages},listeners:[],ready:false,disposed:false,pendingEdit:false};
   _productWorkbookEngine=engine;container.replaceChildren(iframe);
   engine.readyPromise=new Promise(function(resolve,reject){
     // 组件改为打开工作簿时下载，手机弱网需要比内嵌脚本更长的初始化时间。
+    var phases={iframe:0,steady:0,formula:0,tools:0,ready:0};
     var timer=setTimeout(function(){reject(new Error('表格初始化超时，请重新打开产品'));},120000);engine.initTimer=timer;engine.rejectReady=reject;
     iframe.onload=async function(){
       if(engine.disposed||_productWorkbookEngine!==engine){clearTimeout(timer);reject(new Error('表格已关闭'));return;}
+      phases.iframe=Math.round(performance.now()-openedAt);
+      installWorkbookInteractionLog(iframe.contentDocument);
       try{
         var win=iframe.contentWindow,runtime=win.WorkbenchUniver;if(!runtime)throw new Error('表格组件加载失败');
         var created=runtime.create('univerRoot');engine.univer=created.univer;engine.univerAPI=created.univerAPI;
@@ -3717,19 +3735,30 @@ async function initProductWorkbookEditor(container,product){
           if(engine.univerAPI.getCurrentLifecycleStage()>=engine.univerAPI.Enum.LifecycleStages.Steady){done();return;}
           var lifecycle=engine.univerAPI.addEvent(engine.univerAPI.Event.LifeCycleChanged,function(event){if(event.stage===engine.univerAPI.Enum.LifecycleStages.Steady){lifecycle.dispose();done();}});engine.listeners.push(lifecycle);
         });
+        phases.steady=Math.round(performance.now()-openedAt);
         function notify(){if(engine.ready&&!engine.disposed&&_productWorkbookEngine===engine&&typeof window.onProductWorkbookChanged==='function')window.onProductWorkbookChanged();}
-        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){if(engine.pendingEdit)return;if(event.type===2||/mutation/.test(event.id))notify();}));
+        var mutationCount=0,mutationTimer=0;
+        engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.CommandExecuted,function(event){
+          var commandId=String(event&&event.id||'');
+          if(!engine.pendingEdit&&(event.type===2||/mutation/.test(commandId)))notify();
+          if(/mutation/.test(commandId)||event.type===2){mutationCount++;if(!mutationTimer)mutationTimer=setTimeout(function(){var count=mutationCount;mutationCount=0;mutationTimer=0;if(count)logOperation('workbook_command',{source:'univer',command:'mutation',count:count});},2000);return;}
+          logThrottled('workbook_command',{source:'univer',command:commandId.slice(0,80)},200,'cmd:'+commandId);
+        }));
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditChanging,function(){engine.pendingEdit=true;}));
         engine.listeners.push(engine.univerAPI.addEvent(engine.univerAPI.Event.SheetEditEnded,function(){engine.pendingEdit=false;notify();}));
         installSheetCellEditReveal(win);
         // 初始公式先完成，再向产品编辑器交付可比较的基线，避免重算被误认为用户改动。
         await engine.univerAPI.getFormula().onCalculationResultApplied(20000);
+        phases.formula=Math.round(performance.now()-openedAt);
         await new Promise(function(done){win.requestAnimationFrame(function(){win.requestAnimationFrame(done);});});
         engine.ready=true;clearTimeout(timer);
         if(typeof installSheetTools==='function')installSheetTools(engine);
+        phases.tools=Math.round(performance.now()-openedAt);
         if(typeof ResizeObserver==='function'){engine.resizeObserver=new ResizeObserver(resizeProductWorkbookEditor);engine.resizeObserver.observe(container);}
+        phases.ready=Math.round(performance.now()-openedAt);
+        logOperation('workbook_open',{source:'worktime',status:'ready',durationMs:phases.ready,memoryMb:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):0,phases:'iframe='+phases.iframe+',steady='+phases.steady+',formula='+phases.formula+',tools='+phases.tools+',ready='+phases.ready});
         resolve(engine);
-      }catch(error){clearTimeout(timer);reject(error);}
+      }catch(error){clearTimeout(timer);var failed=operationFaultDetail(error);failed.source='worktime';failed.durationMs=Math.max(0,Math.round(performance.now()-openedAt));failed.phases='iframe='+phases.iframe+',steady='+phases.steady+',formula='+phases.formula+',tools='+phases.tools;logOperation('workbook_open',failed);reject(error);}
     };
     iframe.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="'+styleUrl+'"><style>html,body,#univerRoot{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:Microsoft YaHei,Arial,sans-serif}</style></head><body><div id="univerRoot"></div><script>'+workbookFrameFullscreenPatch()+'<\/script><script src="'+scriptUrl+'"><\/script></body></html>';
   });
@@ -3766,10 +3795,10 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.10.11';
-/* ================= 本机操作日志：只记录事件元数据，不记录工作内容或凭证 ================= */
+var WORKBENCH_BUILD='2026.11.14.2';
+/* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
-var OPERATION_LOG_LIMIT=2000;
+var OPERATION_LOG_LIMIT=8000;
 var _operationLogEntries=null,_operationLoggingInstalled=false,_operationSession='',_operationSequence=0;
 var _operationThemeTimer=0,_operationThemeFields=new Set(),_operationLastRoute='';
 var OPERATION_EVENT_LABELS={
@@ -3781,11 +3810,31 @@ var OPERATION_EVENT_LABELS={
   task_batch_complete:'批量完成任务',task_batch_delete:'批量删除任务',task_selection:'选择任务',task_select_all:'批量选择任务',task_mail_import:'从邮件导入任务',
   task_press_cancel:'取消等待长按',task_drag_start:'开始拖动任务',task_drag_drop:'放下任务',task_drag_cancel:'取消拖动任务',task_scroll_start:'开始滚动任务页面',task_scroll_end:'结束滚动任务页面',
   project_create:'新建项目',project_edit:'编辑项目',project_delete:'删除项目',project_block:'修改项目阻塞状态',project_deck_toggle:'切换项目叠卡',
-  theme_update:'修改壁纸或界面设置',sync_configure:'配置云端同步',sync_disconnect:'断开云端同步',sync_push:'上传云端数据',sync_pull:'拉取云端数据',lock_setting:'修改本机密码锁设置',access_unlock:'解锁工作台'
+  theme_update:'修改壁纸或界面设置',sync_configure:'配置云端同步',sync_disconnect:'断开云端同步',sync_push:'上传云端数据',sync_pull:'拉取云端数据',lock_setting:'修改本机密码锁设置',access_unlock:'解锁工作台',
+  ui_click:'点击界面',ui_input:'输入内容',ui_change:'修改控件',ui_shortcut:'键盘快捷键',dialog_open:'打开对话框',dialog_close:'关闭对话框',file_import:'选择导入文件',
+  workbook_open:'打开工作簿',workbook_close:'关闭工作簿',workbook_ui:'工作簿界面操作',workbook_command:'工作簿命令',ecrs_ui:'ECRS 操作',ecrs_video:'ECRS 视频事件',
+  network:'网络请求',console:'控制台输出',long_task:'长任务',environment:'环境变化',storage:'本地存储'
 };
 function safeOperationErrorName(error){
   var name=error&&error.name;
-  return ['Error','TypeError','SyntaxError','RangeError','ReferenceError','URIError','EvalError','AbortError','NetworkError','QuotaExceededError','SecurityError','InvalidStateError','NotAllowedError'].indexOf(name)>=0?name:'Error';
+  return ['Error','TypeError','SyntaxError','RangeError','ReferenceError','URIError','EvalError','AbortError','NetworkError','QuotaExceededError','SecurityError','InvalidStateError','NotAllowedError','NotSupportedError'].indexOf(name)>=0?name:'Error';
+}
+function operationFaultText(value,max){
+  return String(value==null?'':value).replace(/ghp_[A-Za-z0-9_]+/g,'[redacted]').replace(/github_pat_[A-Za-z0-9_]+/g,'[redacted]').replace(/sk-[A-Za-z0-9_-]{8,}/g,'[redacted]').replace(/Bearer\s+\S+/gi,'Bearer [redacted]').replace(/((?:token|access_token|api[_-]?key|apikey|authorization|password)=)[^&\s]+/gi,'$1[redacted]').replace(/(token\s+)\S+/gi,'$1[redacted]').replace(/\s+/g,' ').trim().slice(0,max||180);
+}
+function operationFaultStack(error){
+  return String(error&&error.stack||'').split('\n').slice(0,3).map(function(line){return operationFaultText(line,140);}).filter(Boolean).join(' | ').slice(0,360);
+}
+function operationFaultDetail(error){
+  var detail={status:'failed',errorName:safeOperationErrorName(error)};
+  var message=operationFaultText(error&&error.message,240);
+  var stack=operationFaultStack(error);
+  if(message)detail.message=message;
+  if(stack)detail.stack=stack;
+  return detail;
+}
+function operationRedactUrl(value){
+  return operationFaultText(String(value||'').replace(/([?&](?:token|access_token|api[_-]?key|apikey|key|authorization)=)[^&#\s]+/gi,'$1[redacted]'),200);
 }
 function sanitizeOperationDetail(detail){
   var result={};if(!detail||typeof detail!=='object')return result;
@@ -3796,6 +3845,18 @@ function sanitizeOperationDetail(detail){
   ['fromIndex','toIndex','count'].forEach(function(key){var v=detail[key];if(Number.isInteger(v)&&v>=0&&v<=1000000)result[key]=v;});
   if(Number.isInteger(detail.httpStatus)&&detail.httpStatus>=100&&detail.httpStatus<=599)result.httpStatus=detail.httpStatus;
   if(detail.errorName)result.errorName=safeOperationErrorName({name:detail.errorName});
+  if(typeof detail.message==='string'){var message=operationFaultText(detail.message,240);if(message)result.message=message;}
+  if(typeof detail.stack==='string'){var stack=operationFaultStack({stack:detail.stack});if(stack)result.stack=stack;}
+  ['target','path','label','fileName','fileType','userAgent','combo','key'].forEach(function(key){if(typeof detail[key]==='string'){var text=operationFaultText(detail[key],key==='path'?160:key==='userAgent'?180:80);if(text)result[key]=text;}});
+  if(typeof detail.url==='string'){var url=operationRedactUrl(detail.url);if(url)result.url=url;}
+  if(typeof detail.command==='string'){var command=operationFaultText(detail.command,80).replace(/[^a-zA-Z0-9._:-]/g,'');if(command)result.command=command;}
+  if(typeof detail.phases==='string'&&/^[a-z0-9=,]{1,180}$/.test(detail.phases))result.phases=detail.phases;
+  if(typeof detail.eventName==='string'&&/^[a-z0-9_-]{1,32}$/.test(detail.eventName))result.eventName=detail.eventName;
+  if(['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].indexOf(detail.method)>=0)result.method=detail.method;
+  if(typeof detail.inputType==='string'&&/^[a-z-]{1,24}$/.test(detail.inputType))result.inputType=detail.inputType;
+  if(typeof detail.op==='string'&&/^[a-z]{2,12}$/.test(detail.op))result.op=detail.op;
+  if(typeof detail.store==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.test(detail.store))result.store=detail.store;
+  ['durationMs','fileSize','valueLength','media','mediaMs','memoryMb'].forEach(function(key){var value=detail[key];if(Number.isInteger(value)&&value>=0&&value<=2000000000)result[key]=value;});
   return result;
 }
 function operationSessionId(){
@@ -3820,9 +3881,57 @@ function logOperation(action,detail){
     var entry={time:new Date().toISOString(),sessionId:operationSessionId(),sequence:++_operationSequence,action:action,label:OPERATION_EVENT_LABELS[action],detail:sanitizeOperationDetail(detail)};
     _operationLogEntries.push(entry);
     if(_operationLogEntries.length>OPERATION_LOG_LIMIT)_operationLogEntries.splice(0,_operationLogEntries.length-OPERATION_LOG_LIMIT);
-    try{localStorage.setItem(OPERATION_LOG_KEY,JSON.stringify(_operationLogEntries));}catch(e){}
+    scheduleOperationLogPersist(action==='page_error'||action==='promise_error'||action==='console'||(entry.detail&&entry.detail.status==='failed'));
     return entry;
   }catch(e){}
+}
+var _operationLogPersistTimer=0;
+function scheduleOperationLogPersist(urgent){
+  if(urgent){clearTimeout(_operationLogPersistTimer);_operationLogPersistTimer=setTimeout(flushOperationLogPersist,0);return;}
+  if(_operationLogPersistTimer)return;
+  _operationLogPersistTimer=setTimeout(flushOperationLogPersist,1500);
+}
+function flushOperationLogPersist(){
+  clearTimeout(_operationLogPersistTimer);_operationLogPersistTimer=0;
+  if(!_operationLogEntries)return;
+  try{localStorage.setItem(OPERATION_LOG_KEY,JSON.stringify(_operationLogEntries));}
+  catch(error){
+    if(_operationLogEntries.length>400){_operationLogEntries.splice(0,Math.floor(_operationLogEntries.length/2));try{localStorage.setItem(OPERATION_LOG_KEY,JSON.stringify(_operationLogEntries));}catch(ignore){}}
+  }
+}
+var _operationTraceSlots={};
+function logThrottled(action,detail,wait,key){
+  var nowMs=Date.now(),slot=_operationTraceSlots[key];
+  if(!slot||nowMs-slot.at>=wait){_operationTraceSlots[key]={at:nowMs,count:1};logOperation(action,detail);return;}
+  slot.count++;
+  clearTimeout(slot.timer);
+  slot.timer=setTimeout(function(){var count=slot.count;delete _operationTraceSlots[key];if(count>1){detail.count=count;logOperation(action,detail);}},wait);
+}
+function operationElement(node){
+  if(!node)return null;
+  if(node.nodeType===3)node=node.parentElement;
+  if(!node||!node.closest)return null;
+  return node.closest('button,a,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"]')||node;
+}
+function operationSecretElement(el){
+  if(!el)return false;
+  var blob=((el.id||'')+' '+(el.getAttribute?el.getAttribute('name')||'':'')+' '+(el.type||'')+' '+(el.getAttribute?el.getAttribute('autocomplete')||'':'')+' '+(el.getAttribute?el.getAttribute('aria-label')||'':'')).toLowerCase();
+  return el.type==='password'||/password|passwd|token|secret|apikey|api-key|authorization/.test(blob);
+}
+function operationControlDetail(node){
+  var el=operationElement(node);if(!el)return {};
+  var id=el.id||'',label=el.getAttribute?(el.getAttribute('aria-label')||el.getAttribute('title')||''):'';
+  if(!label&&(el.tagName==='BUTTON'||(el.getAttribute&&el.getAttribute('role')==='tab')))label=(el.textContent||'').replace(/\s+/g,' ').trim();
+  var path=(el.tagName||'node').toLowerCase()+(id?'#'+id:(el.classList&&el.classList.length?'.'+el.classList[0]:''));
+  return {target:path,label:label,path:path,secret:operationSecretElement(el),inputType:(el.type&&/^[a-z-]{1,24}$/.test(el.type)?el.type:'')};
+}
+function operationFileDetail(file){
+  return {fileName:String(file&&file.name||'').split(/[\\/]/).pop(),fileSize:file&&Number.isFinite(file.size)?file.size:0,fileType:file&&file.type||''};
+}
+function operationDialogLabel(node){
+  if(!node||!node.querySelector)return node&&node.id||'dialog';
+  var title=node.querySelector('h1,h2,h3,[role="heading"],[aria-label]');
+  return (title&&(title.getAttribute('aria-label')||title.textContent)||node.id||'dialog').replace(/\s+/g,' ').trim();
 }
 function flushOperationThemeLog(){
   clearTimeout(_operationThemeTimer);_operationThemeTimer=0;
@@ -3847,11 +3956,12 @@ function setOperationLogRange(preset){
   start.value=localValue(from);end.value=localValue(nowDate);
 }
 function exportOperationLogs(){
-  flushOperationThemeLog();
+  flushOperationThemeLog();flushOperationLogPersist();
   var from=operationLogRangeBound(document.getElementById('operationLogStart'),false),to=operationLogRangeBound(document.getElementById('operationLogEnd'),true);
   var events=getOperationLogs().filter(function(entry){var time=new Date(entry.time).getTime();if(from!=null&&time<from)return false;if(to!=null&&time>to)return false;return true;});
   logOperation('log_export',{count:events.length});
-  var payload={formatVersion:1,application:'业务工作台',buildVersion:typeof WORKBENCH_BUILD==='string'?WORKBENCH_BUILD:'2026-10-27.4',exportedAt:new Date().toISOString(),sessionId:operationSessionId(),retentionLimit:OPERATION_LOG_LIMIT,range:{from:from,to:to},environment:{viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio||1},mode:location.protocol==='file:'?'local_file':'web'},events:events};
+  var memory=performance&&performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):0;
+  var payload={formatVersion:1,application:'业务工作台',buildVersion:typeof WORKBENCH_BUILD==='string'?WORKBENCH_BUILD:'2026-10-27.4',exportedAt:new Date().toISOString(),sessionId:operationSessionId(),retentionLimit:OPERATION_LOG_LIMIT,range:{from:from,to:to},environment:{viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio||1},mode:location.protocol==='file:'?'local_file':'web',userAgent:navigator.userAgent,online:navigator.onLine,memoryMb:memory,deviceMemory:navigator.deviceMemory||0,hardwareConcurrency:navigator.hardwareConcurrency||0},events:events};
   var blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
   link.href=url;link.download='业务工作台-操作日志-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.style.display='none';document.body.appendChild(link);
   try{link.click();}finally{link.remove();setTimeout(function(){URL.revokeObjectURL(url);},5000);}
@@ -3868,9 +3978,9 @@ function installOperationLogging(){
     var original=window[name];if(typeof original!=='function')return;
     window[name]=function(){
       var self=this,args=Array.from(arguments),snapshot=safely(function(){return before?before(args):null;}),result;
-      try{result=original.apply(self,args);}catch(error){logOperation('operation_error',{source:name.toLowerCase(),errorName:safeOperationErrorName(error)});throw error;}
+      try{result=original.apply(self,args);}catch(error){var detail=operationFaultDetail(error);detail.source=name.toLowerCase();logOperation('operation_error',detail);throw error;}
       function finish(value){safely(function(){after(snapshot,args,value);});}
-      if(result&&typeof result.then==='function')result.then(finish,function(error){logOperation('operation_error',{source:name.toLowerCase(),errorName:safeOperationErrorName(error)});});else finish(result);
+      if(result&&typeof result.then==='function')result.then(finish,function(error){var detail=operationFaultDetail(error);detail.source=name.toLowerCase();logOperation('operation_error',detail);});else finish(result);
       return result;
     };
   }
@@ -3905,18 +4015,35 @@ function installOperationLogging(){
   ['pushCloud','pullCloud'].forEach(function(name){
     var original=window[name];if(typeof original!=='function')return;
     window[name]=function(){
-      var config=typeof getSync==='function'?getSync():{},enabled=!!(config.gistId&&config.token),action=name==='pushCloud'?'sync_push':'sync_pull',result;
-      try{result=original.apply(this,arguments);}catch(error){if(enabled)logOperation(action,{status:'failed',errorName:safeOperationErrorName(error)});throw error;}
-      if(enabled&&result&&typeof result.then==='function')result.then(function(){logOperation(action,{status:'success'});},function(error){var detail={status:'failed',errorName:safeOperationErrorName(error)},match=error&&typeof error.message==='string'&&/^HTTP ([1-5][0-9]{2})$/.exec(error.message);if(match)detail.httpStatus=+match[1];logOperation(action,detail);});
+      var config=typeof getSync==='function'?getSync():{},enabled=!!(config.gistId&&config.token),action=name==='pushCloud'?'sync_push':'sync_pull',started=performance.now(),result;
+      try{result=original.apply(this,arguments);}catch(error){if(enabled){var failed=operationFaultDetail(error);failed.durationMs=Math.max(0,Math.round(performance.now()-started));logOperation(action,failed);}throw error;}
+      if(enabled&&result&&typeof result.then==='function')result.then(function(){logOperation(action,{status:'success',durationMs:Math.max(0,Math.round(performance.now()-started))});},function(error){var detail=operationFaultDetail(error),match=error&&typeof error.message==='string'&&/^HTTP ([1-5][0-9]{2})$/.exec(error.message);if(match)detail.httpStatus=+match[1];detail.durationMs=Math.max(0,Math.round(performance.now()-started));logOperation(action,detail);});
       return result;
     };
   });
   ['setupLock','changeLock','removeLock'].forEach(function(name){wrap(name,function(){try{return localStorage.getItem('wb_lock')||'';}catch(e){return '';}},function(before){var after='';try{after=localStorage.getItem('wb_lock')||'';}catch(e){}if(before!==after)logOperation('lock_setting',{status:after?(before?'changed':'enabled'):'disabled'});});});
   wrap('tryUnlock',function(){var mask=document.getElementById('lockMask');return !!(mask&&mask.classList.contains('open'));},function(before){var mask=document.getElementById('lockMask');if(before)logOperation('access_unlock',{status:mask&&mask.classList.contains('open')?'failed':'success'});});
-  window.addEventListener('error',function(event){logOperation('page_error',{source:'window',errorName:safeOperationErrorName(event.error)});});
-  window.addEventListener('unhandledrejection',function(event){logOperation('promise_error',{source:'window',errorName:safeOperationErrorName(event.reason)});});
-  window.addEventListener('pagehide',flushOperationThemeLog);
-  logOperation('app_open',{source:location.protocol==='file:'?'local_file':'web'});
+  wrap('openModal',null,function(){var box=document.getElementById('modalBox');logOperation('dialog_open',{source:'modal',target:'modalBox',label:operationDialogLabel(box)});});
+  wrap('closeModal',function(){var mask=document.getElementById('mask');return !!(mask&&mask.classList.contains('open'));},function(before){var mask=document.getElementById('mask');if(before&&mask&&!mask.classList.contains('open'))logOperation('dialog_close',{source:'modal',target:'modalBox'});});
+  window.addEventListener('error',function(event){var detail=operationFaultDetail(event.error||{name:'Error',message:event.message});detail.source='window';logOperation('page_error',detail);});
+  window.addEventListener('unhandledrejection',function(event){var reason=event.reason instanceof Error?event.reason:{name:event.reason&&event.reason.name||'Error',message:event.reason&&event.reason.message||String(event.reason||''),stack:event.reason&&event.reason.stack};var detail=operationFaultDetail(reason);detail.source='window';logOperation('promise_error',detail);});
+  document.addEventListener('click',function(event){var detail=operationControlDetail(event.target);if(detail.secret)detail.label='';detail.pointerType=event.pointerType||'mouse';detail.source='pointer';logOperation('ui_click',detail);},true);
+  document.addEventListener('input',function(event){var detail=operationControlDetail(event.target);if(detail.secret){detail.label='';detail.valueLength=0;}else detail.valueLength=String(event.target&&event.target.value||'').length;detail.source='input';logThrottled('ui_input',detail,400,detail.target||'input');},true);
+  document.addEventListener('change',function(event){var input=event.target,detail=operationControlDetail(input);detail.source='change';if(input&&input.type==='file'){var file=input.files&&input.files[0];if(!file)return;var imported=operationFileDetail(file);imported.count=input.files.length;imported.target=detail.target;imported.source='file';logOperation('file_import',imported);return;}if(!detail.secret)detail.valueLength=String(input&&input.value||'').length;else detail.label='';logOperation('ui_change',detail);},true);
+  document.addEventListener('keydown',function(event){var shortcut=event.ctrlKey||event.metaKey||event.altKey||event.key==='Escape'||event.key==='Enter'||event.key==='Tab';if(!shortcut)return;var detail=operationControlDetail(event.target);detail.source='keyboard';detail.combo=[event.ctrlKey?'Ctrl':'',event.metaKey?'Meta':'',event.altKey?'Alt':'',event.shiftKey?'Shift':'',detail.secret&&event.key.length===1?'(redacted)':event.key].filter(Boolean).join('+');logOperation('ui_shortcut',detail);},true);
+  function watchDialogRoot(root){if(!root||root.__wbDialogWatch)return;root.__wbDialogWatch=true;new MutationObserver(function(records){records.forEach(function(record){Array.prototype.forEach.call(record.addedNodes,function(node){if(!node||node.nodeType!==1)return;if(node.id==='worktimeUnsavedPrompt'||node.id==='wbHistoryDialog'||node.id==='wbAgentPanel'||node.getAttribute('role')==='dialog'||node.classList.contains('wb-history-dialog'))logOperation('dialog_open',{source:'dialog',target:node.id||'dialog',label:operationDialogLabel(node)});});Array.prototype.forEach.call(record.removedNodes,function(node){if(!node||node.nodeType!==1)return;if(node.id==='worktimeUnsavedPrompt'||node.id==='wbHistoryDialog'||node.id==='wbAgentPanel'||node.getAttribute('role')==='dialog'||node.classList.contains('wb-history-dialog'))logOperation('dialog_close',{source:'dialog',target:node.id||'dialog'});});});}).observe(root,{childList:true,subtree:root.id==='modalBox'});}
+  watchDialogRoot(document.body);watchDialogRoot(document.getElementById('modalBox'));
+  if(!window.fetch.__wbTraced){var originalFetch=window.fetch;var tracedFetch=function(input,init){var method=(init&&init.method)||(input&&input.method)||'GET',url=operationRedactUrl(typeof input==='string'?input:(input&&input.url)||''),started=performance.now();return originalFetch.apply(this,arguments).then(function(response){logOperation('network',{source:'fetch',method:String(method||'GET').toUpperCase(),url:url,httpStatus:response.status,durationMs:Math.max(0,Math.round(performance.now()-started)),status:response.ok?'success':'failed'});return response;},function(error){var detail=operationFaultDetail(error);detail.source='fetch';detail.method=String(method||'GET').toUpperCase();detail.url=url;detail.durationMs=Math.max(0,Math.round(performance.now()-started));logOperation('network',detail);throw error;});};tracedFetch.__wbTraced=true;window.fetch=tracedFetch;}
+  if(!XMLHttpRequest.prototype.__wbTraced){var originalOpen=XMLHttpRequest.prototype.open,originalSend=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__wbTrace={method:method,url:url};return originalOpen.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){var self=this,meta=this.__wbTrace||{},started=performance.now();function finish(){self.removeEventListener('loadend',finish);var detail={source:'xhr',method:String(meta.method||'GET').toUpperCase(),url:operationRedactUrl(meta.url||''),httpStatus:self.status||0,durationMs:Math.max(0,Math.round(performance.now()-started)),status:self.status>=200&&self.status<400?'success':'failed'};logOperation('network',detail);}this.addEventListener('loadend',finish);return originalSend.apply(this,arguments);};XMLHttpRequest.prototype.__wbTraced=true;}
+  if(window.PerformanceObserver){try{var resourceObserver=new PerformanceObserver(function(list){list.getEntries().forEach(function(entry){if(!entry||entry.initiatorType==='fetch'||entry.initiatorType==='xmlhttprequest')return;if(entry.initiatorType!=='script'&&entry.initiatorType!=='link'&&entry.initiatorType!=='iframe')return;var name=entry.name||'';if(name.indexOf('blob:')===0||name.indexOf('data:')===0)return;logOperation('network',{source:entry.initiatorType,method:'GET',url:operationRedactUrl(name),durationMs:Math.max(0,Math.round(entry.duration||0)),httpStatus:entry.responseStatus||0,status:entry.responseStatus>=400?'failed':(entry.responseStatus?'success':'unknown')});});});resourceObserver.observe({type:'resource',buffered:false});}catch(ignore){}try{var longTaskObserver=new PerformanceObserver(function(list){list.getEntries().forEach(function(entry){if(!entry||entry.duration<200)return;logOperation('long_task',{source:'longtask',durationMs:Math.round(entry.duration)});} );});longTaskObserver.observe({type:'longtask',buffered:false});}catch(ignore){}}
+  ['error','warn'].forEach(function(level){if(console[level]&&console[level].__wbTraced)return;var original=console[level],guard=false;var wrapped=function(){try{if(!guard){guard=true;var text=Array.prototype.map.call(arguments,function(item){return item&&item.stack?String(item.stack):String(item);}).join(' ');var detail=operationFaultDetail({name:level==='error'?'Error':'Error',message:text,stack:arguments[0]&&arguments[0].stack});detail.source='console';detail.status=level;logThrottled('console',detail,300,'console:'+level+':'+detail.message);guard=false;}}catch(ignore){guard=false;}return original.apply(console,arguments);};wrapped.__wbTraced=true;console[level]=wrapped;});
+  if(window.IDBFactory&&IDBFactory.prototype&&!IDBFactory.prototype.open.__wbTraced){function traceStorage(op,store,started,error){var detail={source:'indexeddb',op:op,store:store||'',durationMs:Math.max(0,Math.round(performance.now()-started)),status:error?(error.name==='QuotaExceededError'?'quota':'failed'):'success'};if(error){detail.errorName=safeOperationErrorName(error);detail.message=operationFaultText(error.message,240);detail.stack=operationFaultStack(error);}if(!error&&op==='get'&&detail.durationMs<40)return;logOperation('storage',detail);}function instrumentRequest(request,op,store,started){if(!request||!request.addEventListener)return;request.addEventListener('success',function(){traceStorage(op,store,started,null);});request.addEventListener('error',function(){traceStorage(op,store,started,request.error);});}var originalIdbOpen=IDBFactory.prototype.open;var tracedOpen=function(name){var started=performance.now(),request=originalIdbOpen.apply(this,arguments);instrumentRequest(request,'open',name,started);return request;};tracedOpen.__wbTraced=true;IDBFactory.prototype.open=tracedOpen;['put','add','delete','clear','get'].forEach(function(op){var originalOp=IDBObjectStore.prototype[op];if(!originalOp||originalOp.__wbTraced)return;var tracedOp=function(){var started=performance.now(),request=originalOp.apply(this,arguments);try{instrumentRequest(request,op,this.name,started);}catch(ignore){}return request;};tracedOp.__wbTraced=true;IDBObjectStore.prototype[op]=tracedOp;});}
+  document.addEventListener('visibilitychange',function(){logOperation('environment',{source:'visibility',status:document.visibilityState==='visible'?'visible':'hidden'});});
+  window.addEventListener('online',function(){logOperation('environment',{source:'network',status:'online'});});
+  window.addEventListener('offline',function(){logOperation('environment',{source:'network',status:'offline'});});
+  window.addEventListener('pagehide',function(){flushOperationThemeLog();flushOperationLogPersist();});
+  var memoryMb=performance&&performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):0;
+  logOperation('app_open',{source:location.protocol==='file:'?'local_file':'web',userAgent:navigator.userAgent,memoryMb:memoryMb,count:navigator.hardwareConcurrency||0,status:navigator.onLine?'online':'offline'});
 }
 
 initializeWorkbenchStorage().then(function(){
