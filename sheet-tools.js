@@ -230,7 +230,11 @@
     layer.style.left=rootBox.left+'px';layer.style.top=rootBox.top+'px';layer.style.width=rootBox.width+'px';layer.style.height=rootBox.height+'px';
     var sheet=activeSheet(eng),current=sheetId(sheet),seen={};
     imagesOf(eng).forEach(function(item){
-      if(!item||item.sheetId!==current)return;
+      if(!item||typeof item.dataUrl!=='string'||!item.dataUrl||(item.sheetId&&item.sheetId!==current))return;
+      if(!item.id)item.id=uid();
+      if(item.row==null)item.row=0;
+      if(item.column==null)item.column=0;
+      if(item.mode!=='cell')item.mode='float';
       var origin=cellOrigin(eng,item.row,item.column);if(!origin)return;
       seen[item.id]=true;
       var box=imageBox(eng,item,origin);
@@ -485,23 +489,27 @@
   }
 
   function installSheetTools(eng){
-    eng=eng||engine();if(!eng||eng.__wbSheetTools)return;eng.__wbSheetTools=true;
-    if(!eng.extras.workbenchImages)eng.extras.workbenchImages=[];
-    iframeStyle(eng.iframe.contentDocument);
-    installPaste(eng);
-    mountRibbon(eng);
-    if(imagesOf(eng).length)renderImages();
-    var doc=eng.iframe.contentDocument;
-    if(doc&&!doc.__wbImageRefresh){
-      doc.__wbImageRefresh=true;
-      doc.addEventListener('scroll',function(){if(engine()===eng&&imagesOf(eng).length)renderImages();},true);
-    }
-    eng.__wbImageTimer=setInterval(function(){
-      if(engine()!==eng){clearInterval(eng.__wbImageTimer);return;}
-      placeRibbonBar(eng);
-      placeInsertImageButton(eng);
+    try{
+      eng=eng||engine();if(!eng||eng.__wbSheetTools||!eng.iframe)return;eng.__wbSheetTools=true;
+      if(!eng.extras)eng.extras={};if(!eng.extras.workbenchImages)eng.extras.workbenchImages=[];
+      iframeStyle(eng.iframe.contentDocument);
+      installPaste(eng);
+      mountRibbon(eng);
       if(imagesOf(eng).length)renderImages();
-    },1000);
+      var doc=eng.iframe.contentDocument;
+      if(doc&&!doc.__wbImageRefresh){
+        doc.__wbImageRefresh=true;
+        doc.addEventListener('scroll',function(){try{if(engine()===eng&&imagesOf(eng).length)renderImages();}catch(ignore){}},true);
+      }
+      eng.__wbImageTimer=setInterval(function(){
+        try{
+          if(engine()!==eng){clearInterval(eng.__wbImageTimer);return;}
+          placeRibbonBar(eng);
+          placeInsertImageButton(eng);
+          if(imagesOf(eng).length)renderImages();
+        }catch(ignore){}
+      },1000);
+    }catch(error){if(typeof logOperation==='function'){var detail=typeof operationFaultDetail==='function'?operationFaultDetail(error):{status:'failed',message:error&&error.message};detail.source='image';detail.command='image.boot';logOperation('workbook_ui',detail);}}
   }
 
   window.recordProductWorkbookHistory=recordProductWorkbookHistory;
