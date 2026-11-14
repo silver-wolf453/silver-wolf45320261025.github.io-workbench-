@@ -522,6 +522,10 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
 
 .product-editor-v11 #productWorkbookHost{height:650px;min-height:400px;width:100%;border:1px solid #dfe4ec;border-radius:10px;overflow:hidden;background:#fff;position:relative}
 .ecrs-frame{display:block;width:100%;height:calc(100vh - 150px);min-height:640px;border:0;background:#fff;border-radius:12px}
+.operation-log-export{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.operation-log-export label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2)}
+.operation-log-export input{padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel-in);color:var(--ink)}
+.operation-log-presets{display:flex;gap:8px;flex-wrap:wrap}
 .product-editor-v11 #productWorkbookHost iframe{width:100%;height:100%;border:0;display:block}
 .product-editor-v11 .product-workbook-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:20px 0 10px}
 .product-workbook-toolbar>div{display:flex;gap:8px}
@@ -2223,7 +2227,7 @@ function renderData(){
   }
   h+='</div>';
 
-  h+='<div class="card" id="operationLogCard"><div class="card-h"><h3>操作日志</h3></div><button class="btn primary" id="exportOperationLog" onclick="exportOperationLogs()">导出</button><div class="tip">导出本设备的操作与拖拽记录，便于排查问题。</div></div>';
+  h+='<div class="card" id="operationLogCard"><div class="card-h"><h3>操作日志</h3></div><div class="operation-log-export"><label>开始<input id="operationLogStart" type="datetime-local"></label><label>结束<input id="operationLogEnd" type="datetime-local"></label><div class="operation-log-presets"><button type="button" class="btn sm" onclick="setOperationLogRange(\'today\')">今天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'week\')">近 7 天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'all\')">全部</button><button type="button" class="btn primary sm" id="exportOperationLog" onclick="exportOperationLogs()">导出</button></div></div><div class="tip">按开始和结束时间导出本机操作记录。留空表示不限制这一端。</div></div>';
   document.getElementById('view-data').innerHTML=h;
 }
 
@@ -2955,7 +2959,7 @@ function renderRecycle(){
 }
 
 /* ================= 标准工时与工时复测：玻璃面板、草稿编辑及实时计算 ================= */
-var _worktimeDraft=null,_worktimeSaving=false,_worktimeSearchOpen=false,_worktimeSearchQuery='',_worktimeProductPage=1;
+var _worktimeDraft=null,_worktimeSaving=false,_worktimeSearchOpen=false,_worktimeSearchQuery='',_worktimeProductPage=1,_worktimeShowAllProducts=false;
 var _worktimeSelectedProcessIds=new Set();
 var WORKTIME_PRODUCTS_PER_PAGE=48;
 function formatWorktimeNumber(value){
@@ -2989,6 +2993,12 @@ function setWorktimeSearch(value){
   renderWorktimeProductResults();
 }
 function clearWorktimeSearch(){setWorktimeSearch('');var input=document.getElementById('worktimeSearchPN');if(input)input.focus({preventScroll:true});}
+function toggleWorktimeProductLimit(){
+  _worktimeShowAllProducts=!_worktimeShowAllProducts;_worktimeProductPage=1;
+  var button=document.getElementById('worktimeShowAll');
+  if(button){button.setAttribute('aria-pressed',_worktimeShowAllProducts?'true':'false');button.title=_worktimeShowAllProducts?'只显示 10 款产品':'显示全部产品';button.setAttribute('aria-label',button.title);}
+  renderWorktimeProductResults();
+}
 function goWorktimeProductPage(page){
   var next=Number(page);if(!Number.isInteger(next)||next<1)return;
   _worktimeProductPage=next;renderWorktimeProductResults();
@@ -2998,20 +3008,20 @@ function goWorktimeProductPage(page){
 
 function renderWorktimeProductResults(){
   var results=document.getElementById('worktimeProductResults');if(!results)return;
-  var all=worktimeProductList(),query=_worktimeSearchQuery.trim().toLocaleLowerCase(),list=all.filter(function(product){return !query||String(product.pn||'').toLocaleLowerCase().indexOf(query)>=0;}),pages=Math.max(1,Math.ceil(list.length/WORKTIME_PRODUCTS_PER_PAGE));
+  var all=worktimeProductList(),query=_worktimeSearchQuery.trim().toLocaleLowerCase(),list=all.filter(function(product){return !query||String(product.pn||'').toLocaleLowerCase().indexOf(query)>=0;});
+  var pageSize=_worktimeShowAllProducts?WORKTIME_PRODUCTS_PER_PAGE:10,pages=Math.max(1,Math.ceil(list.length/pageSize));
   _worktimeProductPage=Math.min(Math.max(1,_worktimeProductPage),pages);
-  var count=document.getElementById('worktimeProductCount');if(count)count.textContent=all.length+' / 9999 款产品';
-  var start=(_worktimeProductPage-1)*WORKTIME_PRODUCTS_PER_PAGE,end=Math.min(start+WORKTIME_PRODUCTS_PER_PAGE,list.length),h='';
+  var start=(_worktimeProductPage-1)*pageSize,end=Math.min(start+pageSize,list.length),h='';
   if(query)h+='<p class="worktime-search-summary muted" role="status">匹配 '+list.length+' 款产品 · 仅按 PN 号搜索</p>';
   if(!list.length)h+='<div class="card worktime-empty"><div class="empty">'+(query?'没有匹配此 PN 号的产品':'暂无产品工时，点击左上角 ＋ 新建')+'</div></div>';
   else h+='<div class="grid cols-2 worktime-products">'+list.slice(start,end).map(worktimeProductCard).join('')+'</div>';
-  if(pages>1)h+='<nav class="worktime-pagination" aria-label="产品分页"><button type="button" class="btn sm" id="worktimePreviousPage" onclick="goWorktimeProductPage('+(_worktimeProductPage-1)+')"'+(_worktimeProductPage===1?' disabled':'')+'>上一页</button><span aria-live="polite">'+(start+1)+'–'+end+' / '+list.length+' · 第 '+_worktimeProductPage+' / '+pages+' 页</span><button type="button" class="btn sm" id="worktimeNextPage" onclick="goWorktimeProductPage('+(_worktimeProductPage+1)+')"'+(_worktimeProductPage===pages?' disabled':'')+'>下一页</button></nav>';
+  if(_worktimeShowAllProducts&&pages>1)h+='<nav class="worktime-pagination" aria-label="产品分页"><button type="button" class="btn sm" id="worktimePreviousPage" onclick="goWorktimeProductPage('+(_worktimeProductPage-1)+')"'+(_worktimeProductPage===1?' disabled':'')+'>上一页</button><span aria-live="polite">'+(start+1)+'–'+end+' / '+list.length+' · 第 '+_worktimeProductPage+' / '+pages+' 页</span><button type="button" class="btn sm" id="worktimeNextPage" onclick="goWorktimeProductPage('+(_worktimeProductPage+1)+')"'+(_worktimeProductPage===pages?' disabled':'')+'>下一页</button></nav>';
   results.innerHTML=h;
 }
 function renderWorktime(){
   worktimeRefreshForView();
   var pending=worktimePendingReviews(state).length,full=typeof worktimeCanCreateProduct==='function'?!worktimeCanCreateProduct(state):worktimeProductList().length>=9999;
-  var h='<div class="worktime-toolbar"><button type="button" class="btn primary icon-only worktime-add" id="newWorktimeProduct" onclick="openWorktimeModal()" aria-label="新建产品工时" title="'+(full?'已达到 9999 个产品上限':'新建产品工时')+'"'+(full?' disabled':'')+'>＋</button><button type="button" class="btn icon-only worktime-search-toggle'+(_worktimeSearchOpen?' active':'')+'" id="worktimeSearchToggle" onclick="toggleWorktimeSearch()" aria-label="搜索 PN 号" title="仅搜索 PN 号" aria-controls="worktimeSearchForm" aria-expanded="'+String(_worktimeSearchOpen)+'"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg></button><span class="muted" id="worktimeProductCount"></span><a class="btn sm worktime-retest-link" href="#worktime-retest">工时复测'+(pending?'<span class="chip amber">'+pending+'</span>':'')+'</a></div>';
+  var h='<div class="worktime-toolbar"><button type="button" class="btn primary icon-only worktime-add" id="newWorktimeProduct" onclick="openWorktimeModal()" aria-label="新建产品工时" title="'+(full?'已达到 9999 个产品上限':'新建产品工时')+'"'+(full?' disabled':'')+'>＋</button><button type="button" class="btn icon-only worktime-search-toggle'+(_worktimeSearchOpen?' active':'')+'" id="worktimeSearchToggle" onclick="toggleWorktimeSearch()" aria-label="搜索 PN 号" title="仅搜索 PN 号" aria-controls="worktimeSearchForm" aria-expanded="'+String(_worktimeSearchOpen)+'"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l5 5"/></svg></button><button type="button" class="btn icon-only" id="worktimeShowAll" onclick="toggleWorktimeProductLimit()" aria-pressed="'+(_worktimeShowAllProducts?'true':'false')+'" aria-label="'+(_worktimeShowAllProducts?'只显示 10 款产品':'显示全部产品')+'" title="'+(_worktimeShowAllProducts?'只显示 10 款产品':'显示全部产品')+'"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><a class="btn sm worktime-retest-link" href="#worktime-retest">工时复测'+(pending?'<span class="chip amber">'+pending+'</span>':'')+'</a></div>';
   h+='<form class="worktime-search-form" id="worktimeSearchForm" role="search" onsubmit="event.preventDefault();window.setWorktimeSearch(document.getElementById(\'worktimeSearchPN\').value)"'+(_worktimeSearchOpen?'':' hidden')+'><label for="worktimeSearchPN">仅搜索 PN 号</label><div class="worktime-search-input"><input type="search" id="worktimeSearchPN" placeholder="输入完整或部分 PN 号" autocomplete="off" value="'+esc(_worktimeSearchQuery)+'" oninput="setWorktimeSearch(this.value)"><button type="button" class="btn sm" id="clearWorktimeSearch" onclick="window.clearWorktimeSearch()" aria-label="清除 PN 搜索"'+(_worktimeSearchQuery?'':' hidden')+'>清除</button></div></form><div id="worktimeProductResults"></div>';
   document.getElementById('view-worktime').innerHTML=h;renderWorktimeProductResults();
 }
@@ -3065,7 +3075,7 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
   _worktimeDraft=JSON.parse(JSON.stringify(copyDraft||original||{id:uid(),pn:'',name:'',spec:'',workHours:8,productCategory:'',projectCategory:'',version:'V1.0',date:todayStr(),modifiedBy:'',productStatus:'new',totalBomHours:0,totalManpower:0,processes:[],createdAt:now()}));
   ensureProductFieldSchema(_worktimeDraft);
   var caption=copyDraft?'复制产品工时':original?'编辑产品工时':'新建产品工时';
-  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"><button type="button" class="btn sm" onclick="document.getElementById(\'productExcelFile\').click()">导入 Excel</button><button type="button" class="btn sm" onclick="exportProductEditorExcel()">导出 Excel</button><button type="button" class="btn sm" onclick="wbPickCellImage()">单元格图片</button><button type="button" class="btn sm" onclick="wbPickFloatImage()">浮动图片</button><button type="button" class="btn sm" onclick="wbOpenHistory()">历史</button><button type="button" class="btn sm" onclick="wbToggleAgent()">AI</button></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div></form></div>');
+  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div></form></div>');
   if(tableFullscreen)setWorktimeTableFullscreen(true);
   var session=++_productEditorSession;_productEditorLoading=true;
   mountProductFieldEditor(_worktimeDraft);installWorktimePnValidation();captureWorktimeEditorBaseline();
@@ -3821,9 +3831,27 @@ function flushOperationThemeLog(){
   logOperation('theme_update',{themeField:fields.length===1?fields[0]:'multiple',count:fields.length});
 }
 function getOperationLogs(){initializeOperationLog();return JSON.parse(JSON.stringify(_operationLogEntries));}
+function operationLogRangeBound(input,end){
+  if(!input||!input.value)return null;
+  var time=new Date(input.value);if(!Number.isFinite(time.getTime()))return null;
+  if(end&&input.value.length===16)time.setSeconds(59,999);
+  return time.getTime();
+}
+function setOperationLogRange(preset){
+  var start=document.getElementById('operationLogStart'),end=document.getElementById('operationLogEnd');if(!start||!end)return;
+  function localValue(date){var pad=function(n){return String(n).padStart(2,'0');};return date.getFullYear()+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+'T'+pad(date.getHours())+':'+pad(date.getMinutes());}
+  var nowDate=new Date();
+  if(preset==='all'){start.value='';end.value='';return;}
+  var from=new Date(nowDate);from.setHours(0,0,0,0);
+  if(preset==='week')from.setDate(from.getDate()-6);
+  start.value=localValue(from);end.value=localValue(nowDate);
+}
 function exportOperationLogs(){
-  flushOperationThemeLog();logOperation('log_export',{count:getOperationLogs().length});
-  var payload={formatVersion:1,application:'业务工作台',buildVersion:typeof WORKBENCH_BUILD==='string'?WORKBENCH_BUILD:'2026-10-27.4',exportedAt:new Date().toISOString(),sessionId:operationSessionId(),retentionLimit:OPERATION_LOG_LIMIT,environment:{viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio||1},mode:location.protocol==='file:'?'local_file':'web'},events:getOperationLogs()};
+  flushOperationThemeLog();
+  var from=operationLogRangeBound(document.getElementById('operationLogStart'),false),to=operationLogRangeBound(document.getElementById('operationLogEnd'),true);
+  var events=getOperationLogs().filter(function(entry){var time=new Date(entry.time).getTime();if(from!=null&&time<from)return false;if(to!=null&&time>to)return false;return true;});
+  logOperation('log_export',{count:events.length});
+  var payload={formatVersion:1,application:'业务工作台',buildVersion:typeof WORKBENCH_BUILD==='string'?WORKBENCH_BUILD:'2026-10-27.4',exportedAt:new Date().toISOString(),sessionId:operationSessionId(),retentionLimit:OPERATION_LOG_LIMIT,range:{from:from,to:to},environment:{viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio||1},mode:location.protocol==='file:'?'local_file':'web'},events:events};
   var blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
   link.href=url;link.download='业务工作台-操作日志-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';link.style.display='none';document.body.appendChild(link);
   try{link.click();}finally{link.remove();setTimeout(function(){URL.revokeObjectURL(url);},5000);}
