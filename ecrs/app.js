@@ -121,30 +121,61 @@
     if(lower.endsWith('.webm'))return 'video/webm';
     if(lower.endsWith('.ogg')||lower.endsWith('.ogv'))return 'video/ogg';
     if(lower.endsWith('.mp4')||lower.endsWith('.m4v'))return 'video/mp4';
-    return fallback&&fallback.indexOf('video/')===0?fallback:'video/mp4';
+    return fallback&&String(fallback).indexOf('video/')===0?fallback:'video/mp4';
   }
-  function showVideo(blob,name){
+  function asVideoBlob(data,name){
+    if(!data)return null;
+    if(data instanceof ArrayBuffer)return new Blob([data],{type:mimeFor(name)});
+    if(ArrayBuffer.isView(data))return new Blob([data.buffer],{type:mimeFor(name)});
+    if(typeof Blob!=='undefined'&&data instanceof Blob)return data;
+    return new Blob([data],{type:mimeFor(name)});
+  }
+  function videoErrorMessage(video,type){
+    var code=video&&video.error&&video.error.code;
+    var names={1:'播放被中断',2:'视频读取失败',3:'视频解码中断',4:'浏览器无法解码该视频，请使用 H.264 的 MP4 或 VP8/VP9 的 WebM'};
+    var probe=video&&video.canPlayType?video.canPlayType(type||'video/mp4'):'';
+    return (names[code]||'视频无法播放')+'（错误码 '+(code||0)+'，canPlayType '+(probe||'empty')+'）';
+  }
+  function reportVideo(error){
+    var message=error&&error.message?String(error.message):'视频无法播放';
+    var stack=error&&error.stack?String(error.stack).split('\n').slice(0,3).join('\n'):'';
+    var status=document.getElementById('videoStatus');if(status)status.textContent=message;
+    try{parent.postMessage({source:'wb-ecrs',type:'video-error',errorName:error&&error.name||'Error',message:message,stack:stack,code:player.error&&player.error.code||0},location.origin);}catch(ignore){}
+  }
+  function showVideo(data,name){
+    var blob=asVideoBlob(data,name);
     if(!blob)return Promise.reject(new Error('没有视频数据'));
     var type=blob.type&&blob.type.indexOf('video/')===0?blob.type:mimeFor(name,blob.type);
-    var typed=blob.type===type?blob:new Blob([blob],{type:type});
-    if(player._url)URL.revokeObjectURL(player._url);
-    player._url=URL.createObjectURL(typed);
-    player.preload='auto';player.playsInline=true;player.muted=false;
-    player.src=player._url;
-    player.load();
+    var previous=player._url;
+    var url=URL.createObjectURL(blob);
+    player._url=url;
+    player.preload='auto';player.playsInline=true;player.muted=false;player.controls=true;
+    while(player.firstChild)player.removeChild(player.firstChild);
+    var source=document.createElement('source');
+    source.src=url;source.type=type;
+    player.appendChild(source);
     return new Promise(function(resolve,reject){
-      function done(){player.removeEventListener('loadeddata',done);player.removeEventListener('error',fail);resolve();}
-      function fail(){player.removeEventListener('loadeddata',done);player.removeEventListener('error',fail);var code=player.error&&player.error.code;reject(new Error(code===4?'浏览器无法解码该视频，请使用 H.264 的 MP4 或 VP8/VP9 的 WebM':'视频加载失败'));}
-      if(player.readyState>=2){resolve();return;}
-      player.addEventListener('loadeddata',done);player.addEventListener('error',fail);
+      var settled=false;
+      function finish(error){
+        if(settled)return;settled=true;
+        player.removeEventListener('loadeddata',onLoad);
+        player.removeEventListener('error',onError);
+        if(!error&&previous)URL.revokeObjectURL(previous);
+        if(error)reject(error);else{var status=document.getElementById('videoStatus');if(status)status.textContent='';resolve();}
+      }
+      function onLoad(){finish();}
+      function onError(){var code=player.error&&player.error.code;if(code===1)return;finish(new Error(videoErrorMessage(player,type)));}
+      player.addEventListener('loadeddata',onLoad);
+      player.addEventListener('error',onError);
+      player.load();
+      if(player.currentSrc===url&&player.readyState>=2)finish();
     });
   }
   document.getElementById('videoFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
     project.videoName=file.name;project.videoKey='video_'+project.id+'_'+Date.now().toString(36);
-    var typed=file.type&&file.type.indexOf('video/')===0?file:new File([file],file.name,{type:mimeFor(file.name)});
-    showVideo(typed,file.name).catch(function(error){alert(error.message||'视频无法播放');});
-    storeVideo(project.videoKey,typed).catch(function(){project.videoKey='';});
+    showVideo(file,file.name).catch(function(error){reportVideo(error);alert(error.message||'视频无法播放');});
+    storeVideo(project.videoKey,file).catch(function(error){project.videoKey='';reportVideo(error);});
   };
   SPEEDS.forEach(function(speed){
     var button=document.createElement('button');button.type='button';button.className='btn';button.textContent=speed+'x';button.setAttribute('aria-pressed',speed===1?'true':'false');
@@ -152,9 +183,13 @@
     document.getElementById('speeds').appendChild(button);
   });
   document.getElementById('play').onclick=function(){
-    if(!player.currentSrc&&!player.src){alert('请先导入视频');return;}
+    if(!player.currentSrc&&!player.src&&!player.querySelector('source')){alert('请先导入视频');return;}
     var pending=player.play();
-    if(pending&&typeof pending.catch==='function')pending.catch(function(error){alert('无法播放：'+(error&&error.message?error.message:'浏览器拒绝了播放'));});
+    if(pending&&typeof pending.catch==='function')pending.catch(function(error){
+      var reported=new Error('无法播放：'+(error&&error.message?error.message:videoErrorMessage(player)));
+      reported.name=error&&error.name||'Error';if(error&&error.stack)reported.stack=error.stack;
+      reportVideo(reported);alert(reported.message);
+    });
   };
   document.getElementById('pause').onclick=function(){player.pause();};
   function step(sign){var amount=Number(document.getElementById('nudge').value)||1/project.fps;player.pause();player.currentTime=Math.max(0,player.currentTime+sign*amount);render();}
@@ -201,7 +236,7 @@
     var id=event.target.getAttribute('data-open');if(!id)return;
     var item=archive.filter(function(entry){return entry.id===id;})[0];if(!item)return;
     project=clone(item);render();
-    if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)return showVideo(blob,item.videoName||project.videoName);}).catch(function(error){alert(error.message||'无法恢复本机视频，请重新导入');});
+    if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)return showVideo(blob,item.videoName||project.videoName);}).catch(function(error){reportVideo(error);alert(error.message||'无法恢复本机视频，请重新导入');});
   });
 
   document.getElementById('exportExcel').onclick=function(){
@@ -237,6 +272,29 @@
   window.addEventListener('message',function(event){
     if(event.origin!==location.origin||!event.data||event.data.source!=='wb-host')return;
     if(event.data.type==='projects'&&Array.isArray(event.data.projects)){archive=event.data.projects;renderArchive();}
+  });
+  function trace(eventName,detail){
+    try{parent.postMessage({source:'wb-ecrs',type:'trace',event:eventName,detail:detail||{}},location.origin);}catch(ignore){}
+  }
+  document.addEventListener('click',function(event){
+    var el=event.target&&event.target.closest?event.target.closest('button,a,[role="button"]'):null;
+    if(!el)return;
+    trace('click',{label:(el.getAttribute('aria-label')||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,60),target:el.id||el.tagName.toLowerCase()});
+  },true);
+  document.addEventListener('change',function(event){
+    var input=event.target;if(!input)return;
+    if(input.type==='file'&&input.files&&input.files[0]){var file=input.files[0];trace('file',{fileName:String(file.name||'').split(/[\\/]/).pop(),fileSize:file.size||0,fileType:file.type||'',count:input.files.length,target:input.id||''});return;}
+    if(input.type==='password')return;
+    trace('change',{target:input.id||'',valueLength:String(input.value||'').length,inputType:input.type||''});
+  },true);
+  ['loadstart','loadedmetadata','canplay','play','pause','error','ratechange'].forEach(function(name){
+    player.addEventListener(name,function(){
+      var detail={eventName:name};
+      if(name==='loadedmetadata')detail.mediaMs=Math.max(0,Math.round((player.duration||0)*1000));
+      if(name==='ratechange')detail.valueLength=Math.round((player.playbackRate||1)*100);
+      if(name==='error'){detail.media=player.error&&player.error.code||0;detail.message=videoErrorMessage(player);}
+      trace('video',detail);
+    });
   });
   try{archive=JSON.parse(localStorage.getItem('wb_ecrs_archive')||'[]');}catch(e){archive=[];}
   parent.postMessage({source:'wb-ecrs',type:'request'},location.origin);

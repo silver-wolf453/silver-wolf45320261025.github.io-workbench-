@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=2026.11.14.2">
 </head>
 <body>
 <div class="ecrs">
@@ -27,7 +27,8 @@
     <p class="footer">时间轴与分段标注改编自 MIT 许可的 arxiver/video-annotator（Copyright (c) 2022 rrrohamed）。许可证见 VIDEO_ANNOTATOR_MIT.txt。</p>
   </section>
   <section class="panel">
-    <video id="player" controls></video>
+    <video id="player" controls playsinline preload="metadata"></video>
+    <p id="videoStatus" class="muted" role="status"></p>
     <div class="row">
       <button class="btn" id="play" type="button">播放</button>
       <button class="btn" id="pause" type="button">暂停</button>
@@ -50,6 +51,6 @@
     <div class="stats" id="stats"></div>
   </section>
 </div>
-<script src="app.js"></script>
+<script src="app.js?v=2026.11.14.2"></script>
 </body>
 </html>

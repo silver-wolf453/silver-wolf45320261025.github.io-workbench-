@@ -14,7 +14,8 @@ h2{font-size:15px;margin:16px 0 8px}
 .field{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin:6px 0}
 .field input[type=text]{width:100%;padding:7px 8px;border:1px solid #dfe4ec;border-radius:8px}
 .icon{width:30px;height:30px;border:0;background:transparent;cursor:pointer;color:#b42318}
-video{width:100%;max-height:360px;background:#111;border-radius:10px}
+video{width:100%;max-height:360px;background:#111;border-radius:10px;position:relative;z-index:1;display:block}
+#play,#videoStatus{position:relative;z-index:2}
 .speeds button[aria-pressed=true]{background:#2456e6;color:#fff;border-color:#2456e6}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th,td{border-bottom:1px solid #e6ebf2;padding:6px;text-align:left;vertical-align:top}
