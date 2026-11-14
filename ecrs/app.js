@@ -11,6 +11,14 @@
   ],actions:[]};
   var archive=[];
   var player=document.getElementById('player');
+  var hevcControl=null;
+  var nativeTime=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime');
+  var nativePlay=HTMLMediaElement.prototype.play,nativePause=HTMLMediaElement.prototype.pause;
+  var nativeRate=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'playbackRate');
+  Object.defineProperty(player,'currentTime',{configurable:true,get:function(){return hevcControl?hevcControl.getTime():nativeTime.get.call(player);},set:function(value){if(hevcControl)hevcControl.seek(value);else nativeTime.set.call(player,value);}});
+  Object.defineProperty(player,'playbackRate',{configurable:true,get:function(){return hevcControl?hevcControl.getRate():nativeRate.get.call(player);},set:function(value){if(hevcControl)hevcControl.setRate(value);else nativeRate.set.call(player,value);}});
+  player.play=function(){return hevcControl?hevcControl.play():nativePlay.call(player);};
+  player.pause=function(){if(hevcControl)hevcControl.pause();else nativePause.call(player);};
 
   function uid(){return 'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
   function clone(value){return JSON.parse(JSON.stringify(value));}
@@ -132,9 +140,31 @@
   }
   function videoErrorMessage(video,type){
     var code=video&&video.error&&video.error.code;
-    var names={1:'播放被中断',2:'视频读取失败',3:'视频解码中断',4:'浏览器无法解码该视频，请使用 H.264 的 MP4 或 VP8/VP9 的 WebM'};
+    var names={1:'播放被中断',2:'视频读取失败',3:'视频解码中断',4:'浏览器无法解码该视频'};
     var probe=video&&video.canPlayType?video.canPlayType(type||'video/mp4'):'';
     return (names[code]||'视频无法播放')+'（错误码 '+(code||0)+'，canPlayType '+(probe||'empty')+'）';
+  }
+  function desktopVideo(){return !(window.matchMedia&&window.matchMedia('(max-width: 599px)').matches);}
+  function codecMessage(info){
+    if(window.EcrsMp4&&EcrsMp4.hevc(info))return '该视频为 H.265/HEVC 编码，浏览器无法解码。可转为 H.264（720p）后再播放，画面时间与原片对齐。';
+    if(info&&info.audio&&EcrsMp4.awkwardAudio(info))return '音轨为 '+info.audio.codec+'，浏览器无法解码。桌面端会先去掉音轨再播放。';
+    return '浏览器无法解码该视频。'+((info&&EcrsMp4.summary(info))||'');
+  }
+  function logCodec(info,file){
+    var video=info&&info.video,audio=info&&info.audio;
+    trace('video',{eventName:'codec',command:'codec.'+(video&&video.codec||'unknown'),message:window.EcrsMp4?EcrsMp4.summary(info):'',count:info&&info.trackCount||0,mediaMs:Math.max(0,Math.round((info&&info.duration||0)*1000)),fileName:file&&file.name,fileSize:file&&file.size||0,fileType:file&&file.type||''});
+  }
+  function showFix(message,offer){
+    var box=document.getElementById('videoFix'),text=document.getElementById('videoFixText'),button=document.getElementById('videoTranscode');
+    if(text)text.textContent=message||'';
+    if(button)button.hidden=!offer;
+    if(box)box.hidden=!message;
+    var status=document.getElementById('videoStatus');if(status)status.textContent=message||'';
+  }
+  function useCanvas(on){
+    var canvas=document.getElementById('hevcCanvas');
+    player.hidden=!!on;if(canvas)canvas.hidden=!on;
+    if(!on&&hevcControl){hevcControl.stop();hevcControl=null;}
   }
   function reportVideo(error){
     var message=error&&error.message?String(error.message):'视频无法播放';
@@ -167,15 +197,105 @@
       function onError(){var code=player.error&&player.error.code;if(code===1)return;finish(new Error(videoErrorMessage(player,type)));}
       player.addEventListener('loadeddata',onLoad);
       player.addEventListener('error',onError);
+      var timer=setTimeout(function(){finish(new Error(videoErrorMessage(player,type)));},12000);
+      var wrapped=finish;finish=function(error){clearTimeout(timer);wrapped(error);};
       player.load();
       if(player.currentSrc===url&&player.readyState>=2)finish();
     });
   }
+  var activeFile=null,transcodeRun=null;
+  function nativeFailed(error){return !!(player.error&&player.error.code>=3)||/无法解码|解码中断|HEVC|H\.265/.test(error&&error.message||'');}
+  function recoverPlayback(file,info,error){
+    var message=codecMessage(info);
+    if(!desktopVideo()){showFix(message,false);reportVideo(new Error(message));return Promise.resolve();}
+    if(window.EcrsMp4&&EcrsMp4.avc(info)&&(EcrsMp4.awkwardAudio(info)||nativeFailed(error))){
+      document.getElementById('videoStatus').textContent='音轨无法解码，正在去掉音轨…';
+      return EcrsMp4.dropAudio(file).then(function(blob){return showVideo(blob,file.name);}).then(function(){showFix('已去掉无法解码的音轨，正在播放画面。',false);trace('video',{eventName:'remux',command:'codec.video-only',message:'去掉音轨后播放'});}).catch(function(){return offerTranscode(file,info,message);});
+    }
+    if(window.EcrsMp4&&EcrsMp4.hevc(info)&&window.EcrsHevc){
+      return EcrsHevc.supported(info.video).then(function(ok){
+        trace('video',{eventName:'webcodecs',command:ok?'codec.webcodecs-yes':'codec.webcodecs-no',message:info.video.codecString||info.video.codec});
+        if(!ok)return offerTranscode(file,info,message);
+        useCanvas(true);
+        return EcrsHevc.attach(file,info,player,document.getElementById('hevcCanvas')).then(function(control){hevcControl=control;showFix('正在用浏览器的 HEVC 解码器播放。',false);});
+      }).catch(function(){return offerTranscode(file,info,message);});
+    }
+    return offerTranscode(file,info,message);
+  }
+  function offerTranscode(file,info,message){
+    activeFile=file;showFix(message,desktopVideo());reportVideo(new Error(message));return Promise.resolve();
+  }
+  function loadFfmpeg(){
+    if(window.FFmpegWASM&&window.FFmpegWASM.FFmpeg)return Promise.resolve();
+    return new Promise(function(resolve,reject){
+      var script=document.createElement('script');
+      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.14.5',location.href).href;
+      script.onload=function(){resolve();};script.onerror=function(){reject(new Error('转码组件加载失败'));};
+      document.head.appendChild(script);
+    });
+  }
+  function formatRemain(seconds){
+    seconds=Math.max(0,Math.round(seconds));
+    if(seconds<60)return seconds+' 秒';
+    return Math.floor(seconds/60)+' 分 '+(seconds%60)+' 秒';
+  }
+  function startTranscode(){
+    if(!activeFile||!desktopVideo())return;
+    var file=activeFile,button=document.getElementById('videoTranscode'),cancel=document.getElementById('videoCancel'),bar=document.getElementById('videoProgress'),eta=document.getElementById('videoEta');
+    button.disabled=true;cancel.hidden=false;bar.hidden=false;bar.value=0;
+    var started=performance.now(),ffmpeg=null,cancelled=false;
+    cancel.onclick=function(){cancelled=true;if(ffmpeg)ffmpeg.terminate();button.disabled=false;cancel.hidden=true;bar.hidden=true;eta.textContent='已取消转码';};
+    document.getElementById('videoStatus').textContent='正在加载转码组件…';
+    loadFfmpeg().then(function(){
+      if(cancelled)return;
+      ffmpeg=new FFmpegWASM.FFmpeg();transcodeRun=ffmpeg;
+      ffmpeg.on('progress',function(data){
+        var ratio=data&&typeof data.progress==='number'?Math.max(0,Math.min(1,data.progress)):0;
+        bar.value=ratio;
+        if(ratio>0.01){var elapsed=(performance.now()-started)/1000;eta.textContent='正在转为 H.264… 约还需 '+formatRemain(elapsed/ratio-elapsed); }
+      });
+      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.14.5',location.href).href;
+      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.14.5',location.href).href;
+      return ffmpeg.load({coreURL:core,wasmURL:wasm});
+    }).then(function(){
+      if(cancelled||!ffmpeg)return;
+      document.getElementById('videoStatus').textContent='正在转为 H.264（720p，快速预设）…';
+      return file.arrayBuffer().then(function(buffer){return ffmpeg.writeFile('input.mp4',new Uint8Array(buffer));});
+    }).then(function(){
+      if(cancelled||!ffmpeg)return;
+      return ffmpeg.exec(['-i','input.mp4','-an','-c:v','libx264','-preset','ultrafast','-vf','scale=-2:720','-crf','26','-movflags','+faststart','output.mp4'],-1);
+    }).then(function(){
+      if(cancelled||!ffmpeg)return;
+      return ffmpeg.readFile('output.mp4');
+    }).then(function(data){
+      if(cancelled||!data)return;
+      var blob=new Blob([data.buffer],{type:'video/mp4'});
+      useCanvas(false);
+      return showVideo(blob,file.name).then(function(){showFix('已转为 H.264 并开始播放。标注时间与原片对齐。',false);trace('video',{eventName:'transcode',command:'codec.h264',message:'转码完成',fileSize:blob.size});if(project.videoKey)return storeVideo(project.videoKey,blob);});
+    }).catch(function(error){if(!cancelled){reportVideo(error);document.getElementById('videoStatus').textContent=error&&error.message||'转码失败';}}).then(function(){button.disabled=false;cancel.hidden=true;bar.hidden=true;});
+  }
+  document.getElementById('videoTranscode').onclick=startTranscode;
+  function openVideoFile(file){
+    activeFile=file;useCanvas(false);showFix('',false);
+    var inspect=window.EcrsMp4&&/\.mp4$|\.m4v$|\.mov$/i.test(file.name||'')?EcrsMp4.inspectFile(file):Promise.resolve(null);
+    inspect.then(function(info){
+      logCodec(info,file);
+      if(info&&window.EcrsMp4&&EcrsMp4.hevc(info)&&desktopVideo()&&window.EcrsHevc){
+        return EcrsHevc.supported(info.video).then(function(ok){
+          trace('video',{eventName:'webcodecs',command:ok?'codec.webcodecs-yes':'codec.webcodecs-no',message:info.video.codecString||info.video.codec});
+          if(ok){useCanvas(true);return EcrsHevc.attach(file,info,player,document.getElementById('hevcCanvas')).then(function(control){hevcControl=control;showFix('正在用浏览器的 HEVC 解码器播放。',false);});}
+          showFix(codecMessage(info),true);
+          return showVideo(file,file.name).then(function(){showFix('',false);},function(){});
+        });
+      }
+      return showVideo(file,file.name).then(function(){},function(error){return recoverPlayback(file,info,error);});
+    },function(){return showVideo(file,file.name);}).catch(function(error){reportVideo(error);alert(error.message||'视频无法播放');});
+    storeVideo(project.videoKey,file).catch(function(error){project.videoKey='';reportVideo(error);});
+  }
   document.getElementById('videoFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
     project.videoName=file.name;project.videoKey='video_'+project.id+'_'+Date.now().toString(36);
-    showVideo(file,file.name).catch(function(error){reportVideo(error);alert(error.message||'视频无法播放');});
-    storeVideo(project.videoKey,file).catch(function(error){project.videoKey='';reportVideo(error);});
+    openVideoFile(file);
   };
   SPEEDS.forEach(function(speed){
     var button=document.createElement('button');button.type='button';button.className='btn';button.textContent=speed+'x';button.setAttribute('aria-pressed',speed===1?'true':'false');

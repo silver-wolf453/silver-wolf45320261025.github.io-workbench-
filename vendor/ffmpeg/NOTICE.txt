@@ -1,0 +1,14 @@
+ffmpeg.wasm JavaScript wrapper
+Copyright (c) 2019 Jerome Wu
+License: MIT. See LICENSE.ffmpeg.wasm.txt.
+
+ffmpeg-core.js and ffmpeg-core.wasm
+These files are the single-thread build of @ffmpeg/core 0.12.6.
+The WebAssembly binary contains FFmpeg and libx264. FFmpeg is licensed under
+the GNU Lesser General Public License version 2.1 or later. libx264 is licensed
+under the GNU General Public License version 2 or later. Because this build
+links libx264, the combined core is distributed under GPL-2.0-or-later.
+See LICENSE.GPL-2.0.txt.
+
+ECRS loads these files only after the user asks to transcode a video that the
+browser cannot decode. They are not loaded with the spreadsheet.
