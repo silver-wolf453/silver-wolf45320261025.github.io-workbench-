@@ -520,7 +520,8 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
  .product-field-add-row>.btn{grid-column:1/-1}
 }
 
-.product-editor-v11 #productWorkbookHost{height:650px;min-height:400px;width:100%;border:1px solid #dfe4ec;border-radius:10px;overflow:hidden;background:#fff}
+.product-editor-v11 #productWorkbookHost{height:650px;min-height:400px;width:100%;border:1px solid #dfe4ec;border-radius:10px;overflow:hidden;background:#fff;position:relative}
+.ecrs-frame{display:block;width:100%;height:calc(100vh - 150px);min-height:640px;border:0;background:#fff;border-radius:12px}
 .product-editor-v11 #productWorkbookHost iframe{width:100%;height:100%;border:0;display:block}
 .product-editor-v11 .product-workbook-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:20px 0 10px}
 .product-workbook-toolbar>div{display:flex;gap:8px}
@@ -577,6 +578,7 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
     <section class="view" id="view-home"></section>
     <section class="view" id="view-projects"></section>
     <section class="view" id="view-tasks"></section>
+    <section class="view" id="view-ecrs"></section>
     <section class="view" id="view-recycle"></section>
     <section class="view" id="view-worktime"></section>
     <section class="view" id="view-worktime-retest"></section>
@@ -1734,6 +1736,7 @@ var ICONS={
   home:'<path d="M3 10.5L12 3l9 7.5M5 9.5V20h14V9.5"/>',
   folder:'<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
   check:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+  ecrs:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M10 9l5 3-5 3z"/>',
   alert:'<path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
   chart:'<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-3"/>',
   db:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
@@ -1746,6 +1749,7 @@ var ROUTES=[
   {id:'home',name:'首页',icon:'home'},
   {id:'projects',name:'项目',icon:'folder'},
   {id:'tasks',name:'任务',icon:'check'},
+  {id:'ecrs',name:'ECRS',icon:'ecrs'},
   {id:'worktime',name:'标准工时',icon:'worktime'},
   {id:'worktime-retest',name:'复测工时',icon:'retest'},
   {id:'risks',name:'风险',icon:'alert'},
@@ -1755,13 +1759,13 @@ var ROUTES=[
   {id:'appearance',name:'界面',icon:'appearance'},
   {id:'info',name:'信息',icon:'grid'}
 ];
-var TITLES={worktime:'标准工时','worktime-retest':'工时复测',recycle:'回收站',home:'今日工作台',projects:'项目中心',tasks:'任务 Inbox',risks:'风险避雷',review:'工作复盘',data:'数据管理',mail:'邮件中心',appearance:'界面设置',info:'信息中心'};
+var TITLES={worktime:'标准工时','worktime-retest':'工时复测',recycle:'回收站',home:'今日工作台',projects:'项目中心',tasks:'任务 Inbox',ecrs:'ECRS 动作分析',risks:'风险避雷',review:'工作复盘',data:'数据管理',mail:'邮件中心',appearance:'界面设置',info:'信息中心'};
 
 function buildNav(){
   var s='',t='';
   ROUTES.forEach(function(r){
     s+='<button class="nav-item" data-r="'+r.id+'">'+icon(r.icon)+'<span>'+r.name+'</span></button>';
-    t+='<button class="tab" data-r="'+r.id+'">'+icon(r.icon,20)+'<span>'+r.name+'</span></button>';
+    if(r.id!=='ecrs')t+='<button class="tab" data-r="'+r.id+'">'+icon(r.icon,20)+'<span>'+r.name+'</span></button>';
   });
   document.getElementById('sideNav').innerHTML=s;
   document.getElementById('tabbar').innerHTML=t;
@@ -2313,7 +2317,17 @@ function renderInfo(){
 }
 
 /* ================= 启动 ================= */
-var renderers={worktime:renderWorktime,'worktime-retest':renderWorktimeRetest,recycle:renderRecycle,home:renderHome,projects:renderProjects,tasks:renderTasks,risks:renderRisks,review:renderReview,data:renderData,mail:renderMail,appearance:renderAppearance,info:renderInfo};
+function renderEcrs(){
+  var view=document.getElementById('view-ecrs');
+  view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" src="'+workbenchAssetHref('ecrs/index.html')+'"></iframe>';
+}
+window.addEventListener('message',function(event){
+  if(event.origin!==location.origin||!event.data||event.data.source!=='wb-ecrs')return;
+  if(!Array.isArray(state.ecrsProjects))state.ecrsProjects=[];
+  if(event.data.type==='save'&&Array.isArray(event.data.projects)){state.ecrsProjects=event.data.projects;save().then(function(){if(typeof toast==='function')toast('ECRS 分析数据已同步到工作台');});}
+  if(event.data.type==='request'&&event.source)event.source.postMessage({source:'wb-host',type:'projects',projects:state.ecrsProjects||[]},location.origin);
+});
+var renderers={worktime:renderWorktime,'worktime-retest':renderWorktimeRetest,recycle:renderRecycle,home:renderHome,projects:renderProjects,tasks:renderTasks,ecrs:renderEcrs,risks:renderRisks,review:renderReview,data:renderData,mail:renderMail,appearance:renderAppearance,info:renderInfo};
 function renderAll(){refreshWorktimeReviews();if(typeof closeTaskStatusMenu==='function')closeTaskStatusMenu();var h=(location.hash||'#home').slice(1);renderers[h in renderers?h:'home']();syncRecycleButton();}
 function init(){
   var t=today();
@@ -3051,11 +3065,12 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
   _worktimeDraft=JSON.parse(JSON.stringify(copyDraft||original||{id:uid(),pn:'',name:'',spec:'',workHours:8,productCategory:'',projectCategory:'',version:'V1.0',date:todayStr(),modifiedBy:'',productStatus:'new',totalBomHours:0,totalManpower:0,processes:[],createdAt:now()}));
   ensureProductFieldSchema(_worktimeDraft);
   var caption=copyDraft?'复制产品工时':original?'编辑产品工时':'新建产品工时';
-  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"><button type="button" class="btn sm" onclick="document.getElementById(\'productExcelFile\').click()">导入 Excel</button><button type="button" class="btn sm" onclick="exportProductEditorExcel()">导出 Excel</button></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div></form></div>');
+  openModal('<div class="worktime-editor product-editor-v11"><div class="worktime-editor-heading"><div><div class="worktime-editor-title-row"><h3>'+caption+'</h3><button type="submit" form="worktimeProductForm" class="btn primary icon-only" id="saveWorktimeProduct" aria-label="保存产品工时" title="保存产品工时">'+worktimeSaveIcon()+'</button><button type="button" class="btn icon-only" id="worktimeFullscreenButton" onclick="toggleWorktimeFullscreen()" aria-label="全屏编辑" title="全屏编辑" aria-pressed="false">'+worktimeFullscreenIcon(false)+'</button></div></div><button class="iconbtn" id="closeWorktimeEditor" aria-label="关闭产品工时编辑器" title="关闭" onclick="closeModal()">×</button></div><form id="worktimeProductForm" novalidate><div class="field"><label for="productCoreStatus">产品状态</label><select id="productCoreStatus" onchange="_worktimeDraft.productStatus=this.value;onProductFieldMutation()">'+worktimeProductStatusOptions(_worktimeDraft.productStatus)+'</select></div><div id="productFieldsContainer"></div><p id="productPnError" class="worktime-pn-error" role="status" hidden></p><div id="productFieldDesigner"></div><div class="product-workbook-toolbar"><h4>工序工作簿</h4><div><input type="file" id="productExcelFile" accept=".xlsx" hidden onchange="importProductExcelFile(this)"><button type="button" class="btn sm" onclick="document.getElementById(\'productExcelFile\').click()">导入 Excel</button><button type="button" class="btn sm" onclick="exportProductEditorExcel()">导出 Excel</button><button type="button" class="btn sm" onclick="wbPickCellImage()">单元格图片</button><button type="button" class="btn sm" onclick="wbPickFloatImage()">浮动图片</button><button type="button" class="btn sm" onclick="wbOpenHistory()">历史</button><button type="button" class="btn sm" onclick="wbToggleAgent()">AI</button></div></div><div id="productWorkbookStatus" role="status">正在打开电子表格…</div><div id="productWorkbookHost"></div><div id="worktimeFormError" class="worktime-form-error" role="alert" hidden></div></form></div>');
   if(tableFullscreen)setWorktimeTableFullscreen(true);
   var session=++_productEditorSession;_productEditorLoading=true;
   mountProductFieldEditor(_worktimeDraft);installWorktimePnValidation();captureWorktimeEditorBaseline();
   document.getElementById('worktimeProductForm').addEventListener('submit',function(event){event.preventDefault();saveWorktimeProduct();});
+  ensureSheetTools().then(function(){if(window._productWorkbookEngine&&window._productWorkbookEngine.ready&&typeof installSheetTools==='function')installSheetTools(window._productWorkbookEngine);}).catch(function(){});
   initProductWorkbookEditor(document.getElementById('productWorkbookHost'),_worktimeDraft).then(function(){
     if(session!==_productEditorSession)return;readWorktimeEditorDraft();_productEditorBaselineBook=productWorkbookComparable(_worktimeDraft.workbookSnapshot);_productEditorLoading=false;
     var status=document.getElementById('productWorkbookStatus');if(status)status.textContent='';
@@ -3063,7 +3078,7 @@ function openWorktimeModal(id,copyDraft,tableFullscreen){
   }).catch(function(error){if(session!==_productEditorSession)return;_productEditorLoading=false;document.getElementById('productWorkbookStatus').textContent='电子表格加载失败，请关闭后重试。';toast('电子表格加载失败');});
 }
 function worktimeShowFormError(message){var error=document.getElementById('worktimeFormError');if(error){error.textContent=message;error.hidden=false;error.scrollIntoView({block:'nearest'});}toast(message);}
-async function saveWorktimeProduct(){
+async function saveWorktimeProduct(options){
   if(!_worktimeDraft||_worktimeSaving)return;
   if(_productEditorLoading){toast('表格正在加载，请稍候');return;}
   _worktimeSaving=true;var button=document.getElementById('saveWorktimeProduct');if(button){button.disabled=true;button.setAttribute('aria-busy','true');}
@@ -3072,19 +3087,23 @@ async function saveWorktimeProduct(){
     var snapshot=await flushProductWorkbookEditor();if(snapshot)_worktimeDraft.workbookSnapshot=snapshot;
     readDynamicProductFields(_worktimeDraft);
     var draft=JSON.parse(JSON.stringify(_worktimeDraft));ensureProductFieldSchema(draft);draft.productStatus=worktimeProductStatus(draft);
-    var error=validateDynamicProductFields(draft)||syncWorktimePnValidation();if(error){worktimeShowFormError(error);return;}
+    try{await ensureSheetTools();}catch(ignore){}
+    if(typeof recordProductWorkbookHistory==='function'){recordProductWorkbookHistory(draft);_worktimeDraft.workbookHistory=draft.workbookHistory;}
+    var error=validateDynamicProductFields(draft)||syncWorktimePnValidation();    if(error){worktimeShowFormError(error);return false;}
     var existing=state.worktimeProducts.find(function(product){return product.id===draft.id;});
-    if(existing&&existing.deleted){worktimeShowFormError('产品已删除，请重新打开');return;}
-    if(!existing&&!worktimeCanCreateProduct(state)){worktimeShowFormError('已达到 9999 个产品上限');return;}
+    if(existing&&existing.deleted){worktimeShowFormError('产品已删除，请重新打开');return false;}
+    if(!existing&&!worktimeCanCreateProduct(state)){worktimeShowFormError('已达到 9999 个产品上限');return false;}
     var previous=existing?JSON.parse(JSON.stringify(existing)):null;draft.updatedAt=now();if(!draft.createdAt)draft.createdAt=draft.updatedAt;
     if(existing)Object.assign(existing,draft);else state.worktimeProducts.push(draft);
     if(!await save()){
       var position=state.worktimeProducts.findIndex(function(product){return product.id===draft.id;});
       if(previous)state.worktimeProducts[position]=previous;else if(position>=0)state.worktimeProducts.splice(position,1);
-      worktimeShowFormError('产品未保存，请检查本机存储后重试');return;
+      worktimeShowFormError('产品未保存，请检查本机存储后重试');return false;
     }
-    logOperation(existing?'worktime_product_edit':'worktime_product_create',{productId:draft.id});closeModal(true);refreshWorktimeReviews();renderAll();toast('产品工时已保存');
-  }catch(error){worktimeShowFormError('保存失败，草稿仍保留，请重试');}
+    logOperation(existing?'worktime_product_edit':'worktime_product_create',{productId:draft.id});
+    if(options&&options.keepOpen){if((location.hash||'')==='#worktime'&&typeof renderers!=='undefined')renderers.worktime();toast('产品工时已保存');return true;}
+    closeModal(true);refreshWorktimeReviews();renderAll();toast('产品工时已保存');return true;
+  }catch(error){worktimeShowFormError('保存失败，草稿仍保留，请重试');return false;}
   finally{_worktimeSaving=false;setProductFieldEditorDisabled(false);if(button){button.disabled=false;button.removeAttribute('aria-busy');button.innerHTML=worktimeSaveIcon();}}
 }
 async function requestProductWorkbookCloseFlush(){
@@ -3129,7 +3148,7 @@ async function importProductExcelFile(input){
     var snapshot=await exceljsImportWorkbook(await file.arrayBuffer());if(session!==_productEditorSession)return;
     var metadata=snapshot.workbenchProductMetadata;
     if(metadata&&typeof metadata==='object'){
-      ['pn','name','spec','workHours','productCategory','projectCategory','version','date','modifiedBy','totalBomHours','totalManpower','fieldSchema','fieldValues','fieldResults','fieldArchive','productStatus'].forEach(function(key){if(Object.prototype.hasOwnProperty.call(metadata,key))_worktimeDraft[key]=metadata[key];});
+      ['pn','name','spec','workHours','productCategory','projectCategory','version','date','modifiedBy','totalBomHours','totalManpower','fieldSchema','fieldValues','fieldResults','fieldArchive','productStatus','workbookHistory'].forEach(function(key){if(Object.prototype.hasOwnProperty.call(metadata,key))_worktimeDraft[key]=metadata[key];});
       ensureProductFieldSchema(_worktimeDraft);mountProductFieldEditor(_worktimeDraft);document.getElementById('productCoreStatus').value=worktimeProductStatus(_worktimeDraft);
     }
     _worktimeDraft.workbookSnapshot=snapshot;replaced=true;
@@ -3350,7 +3369,7 @@ function wbExcelCoreSnapshot(snapshot){
 }
 function wbExcelProductMetadata(product){
   if(!product)return null;var result={format:'workbench-product-v11',version:1};
-  ['fieldSchema','fieldValues','fieldResults','fieldArchive','pn','name','spec','workHours','productCategory','projectCategory','version','date','modifiedBy','totalManpower','totalBomHours','productStatus'].forEach(function(key){if(product[key]!==undefined)result[key]=wbExcelClone(product[key]);});return result;
+  ['fieldSchema','fieldValues','fieldResults','fieldArchive','pn','name','spec','workHours','productCategory','projectCategory','version','date','modifiedBy','totalManpower','totalBomHours','productStatus','workbookHistory'].forEach(function(key){if(product[key]!==undefined)result[key]=wbExcelClone(product[key]);});return result;
 }
 function exceljsRememberProductBaseline(snapshot,product,editorNormalized){if(snapshot&&snapshot.workbenchExcel){snapshot.workbenchExcel.productBaseline=wbExcelSignature(wbExcelProductMetadata(product));if(editorNormalized)snapshot.workbenchExcel.originalSignature=wbExcelSignature(wbExcelCoreSnapshot(snapshot));}return snapshot;}
 async function exceljsImportWorkbook(arrayBuffer){
@@ -3377,7 +3396,9 @@ async function exceljsImportWorkbook(arrayBuffer){
   if(!snapshot.sheetOrder.length)throw new Error('Excel 文件没有可编辑的工作表');
   var definedNames={};(workbook.definedNames.model||[]).forEach(function(item,index){if(item.name&&item.ranges&&item.ranges.length)definedNames['xlsx_name_'+index]={id:'xlsx_name_'+index,name:item.name,formulaOrRefString:item.ranges.join(','),localSheetId:'AllDefaultWorkbook'};});snapshot.resources=[];[['SHEET_DEFINED_NAME_PLUGIN',definedNames],['SHEET_FILTER_PLUGIN',filters],['SHEET_DATA_VALIDATION_PLUGIN',validations]].forEach(function(pair){if(Object.keys(pair[1]).length)snapshot.resources.push({name:pair[0],data:JSON.stringify(pair[1])});});
   if(snapshot.sheetOrder.every(function(id){return snapshot.sheets[id].hidden;}))snapshot.sheets[snapshot.sheetOrder[0]].hidden=0;
-  sidecar.originalSignature=wbExcelSignature(wbExcelCoreSnapshot(snapshot));sidecar.productBaseline=wbExcelSignature(snapshot.workbenchProductMetadata||null);snapshot.workbenchExcel=sidecar;return snapshot;
+  sidecar.originalSignature=wbExcelSignature(wbExcelCoreSnapshot(snapshot));sidecar.productBaseline=wbExcelSignature(snapshot.workbenchProductMetadata||null);snapshot.workbenchExcel=sidecar;
+  try{await ensureSheetTools();if(typeof wbExcelReadImages==='function')snapshot.workbenchImages=wbExcelReadImages(workbook,snapshot);}catch(ignore){}
+  return snapshot;
 }
 async function exceljsExportWorkbook(snapshot,product){
   await ensureExcelJS();
@@ -3424,6 +3445,7 @@ async function exceljsExportWorkbook(snapshot,product){
   }
   // ExcelJS 4.4.0's worksheet ordering property preserves existing objects/media/merges.
   ordered.forEach(function(id,index){var sheet=workbook.getWorksheet(id);if(sheet)sheet.orderNo=index;});
+  try{await ensureSheetTools();if(typeof wbExcelAttachImages==='function')wbExcelAttachImages(workbook,snapshot);}catch(ignore){}
   var buffer=await workbook.xlsx.writeBuffer();return new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
 
@@ -3503,6 +3525,23 @@ var WORKBENCH_EXCELJS_SCRIPT='vendor/exceljs-4.4.0.min.js?v=f4f230487d2d';
 var _excelJsPromise=null,_spreadsheetPrefetchStarted=false,_phoneSheetPreload=null,_phoneSheetProgress='';
 function workbenchAssetHref(path){return new URL(path,document.baseURI).href;}
 function workbenchHtmlAttr(value){return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function workbookFrameFullscreenPatch(){
+  return '(function(){var rf=Element.prototype.requestFullscreen,ex=Document.prototype.exitFullscreen,fd=Object.getOwnPropertyDescriptor(Document.prototype,"fullscreenElement");if(fd&&fd.get){Object.defineProperty(document,"fullscreenElement",{configurable:true,get:function(){try{var p=window.parent&&window.parent.document,fe=window.frameElement;if(p&&fe&&p.fullscreenElement&&(p.fullscreenElement===fe||fe.contains(p.fullscreenElement)))return document.documentElement;}catch(err){}return fd.get.call(document);}});}Element.prototype.requestFullscreen=function(){try{if(window.frameElement&&window.frameElement.requestFullscreen)return window.frameElement.requestFullscreen();}catch(err){}return rf.apply(this,arguments);};Document.prototype.exitFullscreen=function(){try{var p=window.parent&&window.parent.document;if(p&&p.fullscreenElement)return p.exitFullscreen();}catch(err){}return ex.apply(this,arguments);};})();';
+}
+function ensureSheetTools(){
+  if(window.wbSheetToolsReady)return Promise.resolve();
+  if(window._sheetToolsPromise)return window._sheetToolsPromise;
+  window._sheetToolsPromise=new Promise(function(resolve,reject){
+    var script=document.createElement('script');script.src=workbenchAssetHref('sheet-tools.js');script.async=true;
+    script.onload=function(){resolve();};script.onerror=function(){window._sheetToolsPromise=null;reject(new Error('表格工具加载失败'));};
+    document.head.appendChild(script);
+  });
+  return window._sheetToolsPromise;
+}
+function wbPickCellImage(){ensureSheetTools().then(function(){window.wbAddPickedImage('cell');}).catch(function(){toast('表格工具加载失败');});}
+function wbPickFloatImage(){ensureSheetTools().then(function(){window.wbAddPickedImage('float');}).catch(function(){toast('表格工具加载失败');});}
+function wbOpenHistory(){ensureSheetTools().then(function(){window.wbOpenHistoryPanel();}).catch(function(){toast('表格工具加载失败');});}
+function wbToggleAgent(){ensureSheetTools().then(function(){window.wbOpenAgentPanel();}).catch(function(){toast('表格工具加载失败');});}
 function workbenchPhoneSheet(){return !!(window.matchMedia&&window.matchMedia('(max-width: 599px)').matches);}
 function phoneSheetStatus(text){
   if(!workbenchPhoneSheet())return;
@@ -3586,6 +3625,7 @@ function getProductWorkbookSnapshot(){
   var snapshot=engine.workbook.save();
   if(engine.extras.workbenchExcel)snapshot.workbenchExcel=worktimeWorkbookClone(engine.extras.workbenchExcel);
   if(engine.extras.workbenchProductMetadata)snapshot.workbenchProductMetadata=worktimeWorkbookClone(engine.extras.workbenchProductMetadata);
+  if(engine.extras.workbenchImages)snapshot.workbenchImages=worktimeWorkbookClone(engine.extras.workbenchImages);
   return worktimeWorkbookClone(snapshot);
 }
 async function flushProductWorkbookEditor(){
@@ -3650,8 +3690,9 @@ async function initProductWorkbookEditor(container,product){
   }
   var scriptUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_SCRIPT)),styleUrl=workbenchHtmlAttr(workbenchAssetHref(WORKBENCH_UNIVER_STYLE));
   var snapshot=product&&product.workbookSnapshot?worktimeWorkbookClone(product.workbookSnapshot):createLegacyProductWorkbook(product||{}),iframe=document.createElement('iframe'),serial=++_productWorkbookEngineSerial;
-  iframe.className='product-univer-frame';iframe.title='产品工序电子表格';iframe.style.cssText='display:block;width:100%;height:100%;min-height:420px;border:0;background:white;color-scheme:light;';
-  var engine={iframe:iframe,container:container,serial:serial,extras:{workbenchExcel:snapshot.workbenchExcel,workbenchProductMetadata:snapshot.workbenchProductMetadata},listeners:[],ready:false,disposed:false,pendingEdit:false};
+  var sheetImages=snapshot.workbenchImages||[];delete snapshot.workbenchImages;
+  iframe.className='product-univer-frame';iframe.title='产品工序电子表格';iframe.allow='fullscreen';iframe.setAttribute('allowfullscreen','');iframe.style.cssText='display:block;width:100%;height:100%;min-height:420px;border:0;background:white;color-scheme:light;';
+  var engine={iframe:iframe,container:container,serial:serial,extras:{workbenchExcel:snapshot.workbenchExcel,workbenchProductMetadata:snapshot.workbenchProductMetadata,workbenchImages:sheetImages},listeners:[],ready:false,disposed:false,pendingEdit:false};
   _productWorkbookEngine=engine;container.replaceChildren(iframe);
   engine.readyPromise=new Promise(function(resolve,reject){
     // 组件改为打开工作簿时下载，手机弱网需要比内嵌脚本更长的初始化时间。
@@ -3675,11 +3716,12 @@ async function initProductWorkbookEditor(container,product){
         await engine.univerAPI.getFormula().onCalculationResultApplied(20000);
         await new Promise(function(done){win.requestAnimationFrame(function(){win.requestAnimationFrame(done);});});
         engine.ready=true;clearTimeout(timer);
+        if(typeof installSheetTools==='function')installSheetTools(engine);
         if(typeof ResizeObserver==='function'){engine.resizeObserver=new ResizeObserver(resizeProductWorkbookEditor);engine.resizeObserver.observe(container);}
         resolve(engine);
       }catch(error){clearTimeout(timer);reject(error);}
     };
-    iframe.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="'+styleUrl+'"><style>html,body,#univerRoot{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:Microsoft YaHei,Arial,sans-serif}</style></head><body><div id="univerRoot"></div><script src="'+scriptUrl+'"><\/script></body></html>';
+    iframe.srcdoc='<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="'+styleUrl+'"><style>html,body,#univerRoot{width:100%;height:100%;margin:0;overflow:hidden;background:#fff}body{font-family:Microsoft YaHei,Arial,sans-serif}</style></head><body><div id="univerRoot"></div><script>'+workbookFrameFullscreenPatch()+'<\/script><script src="'+scriptUrl+'"><\/script></body></html>';
   });
   return engine.readyPromise;
 }
@@ -3740,7 +3782,7 @@ function sanitizeOperationDetail(detail){
   ['taskId','projectId','productId','reviewId'].forEach(function(key){var v=detail[key];if(typeof v==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(v))result[key]=v;});
   ['reason','source','status','themeField'].forEach(function(key){var v=detail[key];if(typeof v==='string'&&/^[a-z][a-z0-9_-]{0,63}$/.test(v))result[key]=v;});
   if(['mouse','touch','pen','keyboard'].indexOf(detail.pointerType)>=0)result.pointerType=detail.pointerType;
-  if(['home','projects','tasks','recycle','worktime','worktime-retest','risks','review','data','mail','appearance','info'].indexOf(detail.route)>=0)result.route=detail.route;
+  if(['home','projects','tasks','ecrs','recycle','worktime','worktime-retest','risks','review','data','mail','appearance','info'].indexOf(detail.route)>=0)result.route=detail.route;
   ['fromIndex','toIndex','count'].forEach(function(key){var v=detail[key];if(Number.isInteger(v)&&v>=0&&v<=1000000)result[key]=v;});
   if(Number.isInteger(detail.httpStatus)&&detail.httpStatus>=100&&detail.httpStatus<=599)result.httpStatus=detail.httpStatus;
   if(detail.errorName)result.errorName=safeOperationErrorName({name:detail.errorName});

@@ -1,0 +1,5 @@
+ECRS 视频动作分析是业务工作台中的改编模块。
+时间轴、分段标注和播放控制的思路改编自 MIT 许可的
+arxiver/video-annotator（Copyright (c) 2022 rrrohamed，RapidAnnotator / videotimeline.js）。
+许可证全文见同目录 VIDEO_ANNOTATOR_MIT.txt。
+本模块没有原样嵌入该项目的页面脚本，以便只保存分析数据、不把视频放进云端同步。
