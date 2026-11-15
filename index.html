@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.15.1">
+<meta name="application-version" content="2026.11.15.2">
 <!--
   第三方组件随本仓库提供，打开工作台不需要 CDN。
   Univer 1.4.0：vendor/univer-1.4.0.js 与 vendor/univer-1.4.0.css（Apache-2.0，依赖许可保留在文件内）
@@ -41,8 +41,18 @@ a{color:var(--brand);text-decoration:none}
 svg{display:block}
 
 /* ---------- 布局 ---------- */
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar);min-height:100vh;min-height:100dvh;background:var(--card);border-right:1px solid var(--line);padding:20px 12px 16px;display:none;flex-direction:column;z-index:20}
-.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;line-height:1;padding:4px 8px 20px;color:var(--ink)}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar);min-height:100vh;min-height:100dvh;background:var(--card);border-right:1px solid var(--line);padding:20px 12px 16px;display:none;flex-direction:column;z-index:20;--ink:#111827;--ink2:#4B5565;--ink3:#6B7487;--line:rgba(17,24,39,.08);color:var(--ink)}
+.sidebar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;line-height:1;padding:0 4px;color:var(--ink);min-width:0}
+.nav-collapse{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink2);flex:none}
+.nav-collapse:hover{background:var(--raised);color:var(--ink)}
+.nav-collapse:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.nav-collapse svg{width:18px;height:18px}
+html.nav-collapsed{--sidebar:56px}
+html.nav-collapsed .logo,html.nav-collapsed #sideNav{display:none}
+html.nav-collapsed .sidebar{padding:12px 8px;align-items:center}
+html.nav-collapsed .sidebar-head{margin:0;justify-content:center}
+html.theme-live.surface-dark .sidebar{--ink:#fff;--ink2:rgba(255,255,255,.88);--ink3:rgba(255,255,255,.62);--line:rgba(255,255,255,.3);--raised:rgba(255,255,255,.12);background:rgba(18,26,40,max(.78,var(--pa)))}
 .logo .mark{width:28px;height:28px;border-radius:8px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
 #sideNav{display:flex;flex-direction:column;gap:4px;overflow-y:auto;min-height:0;flex:1;scrollbar-width:thin}
 .nav-item{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:8px;color:var(--ink2);font-size:14px;font-weight:400;width:100%;text-align:left}
@@ -64,6 +74,7 @@ svg{display:block}
 
 @media(min-width:900px){
   body::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--sidebar);background:var(--card);border-right:1px solid var(--line);z-index:19;pointer-events:none}
+  html.theme-live.surface-dark body::before{background:#121a28;border-right-color:rgba(255,255,255,.3)}
   .sidebar{display:flex}
   .main{margin-left:var(--sidebar);padding-bottom:0;min-height:100vh;min-height:100dvh}
   .tabbar{display:none}
@@ -559,8 +570,7 @@ html.theme-live .worktime-review-notice{background:var(--glass);border-color:var
 }
 
 .product-editor-v11 #productWorkbookHost{height:650px;min-height:400px;width:100%;border:1px solid #dfe4ec;border-radius:10px;overflow:hidden;background:#fff;position:relative}
-.ecrs-frame{display:block;width:100%;height:max(1200px,calc(100dvh - 128px));border:0;background:#f4f6fa;border-radius:12px}
-@media(max-width:980px){.ecrs-frame{height:max(1760px,calc(100dvh - 160px))}}
+.ecrs-frame{display:block;width:100%;height:960px;border:0;background:transparent;border-radius:12px}
 .operation-log-export{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .operation-log-export label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2)}
 .operation-log-export input{padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel-in);color:var(--ink)}
@@ -593,13 +603,17 @@ html.theme-live .worktime-review-notice{background:var(--glass);border-color:var
 @media(max-width:599px){.product-editor-v11 #productWorkbookHost{height:70dvh;min-height:460px}.product-editor-v11 .worktime-editor-heading{top:-18px}.product-editor-v11 .worktime-editor-title-row{gap:6px}.product-editor-v11 .worktime-editor-title-row h3{font-size:16px}.product-editor-v11 .worktime-editor-title-row .icon-only{width:30px;min-width:30px;height:30px}.product-editor-v11 #productWorkbookStatus:not(:empty){position:sticky;top:46px;z-index:6;margin:0 0 8px;padding:8px 10px;border-radius:8px;background:#eaf0ff;color:#1b44c0;font-weight:600}}
 
 </style>
+<script>try{if(localStorage.getItem('wb_nav_collapsed')==='1')document.documentElement.classList.add('nav-collapsed');}catch(e){}</script>
 </head>
 <body>
 <div id="bgLayer"></div>
 <div id="bgShade"></div>
 
-<aside class="sidebar">
-  <div class="logo"><span class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>业务工作台</div>
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-head">
+    <div class="logo"><span class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>业务工作台</div>
+    <button type="button" class="nav-collapse" id="navCollapse" aria-expanded="true" aria-controls="sideNav" aria-label="收起功能导航"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M15 9l-3 3 3 3"/></svg></button>
+  </div>
   <nav id="sideNav"></nav>
 </aside>
 
@@ -1554,6 +1568,7 @@ function applyTheme(t){
   var light=t.textMode==='light'||(t.textMode==='auto'||!t.textMode)&&!!t.autoLight;
   root.classList.toggle('tl-light',light);
   var lightInk=t.textMode==='custom'&&validColor(t.textColor)?contrastRatio(t.textColor,'#121a28')>=contrastRatio(t.textColor,'#ffffff'):light;
+  root.classList.toggle('surface-dark',!!(live&&lightInk));
   var surface=lightInk?'18,26,40':'255,255,255';
   root.style.setProperty('--surface-rgb',surface);
   if(live){
@@ -1568,6 +1583,7 @@ function applyTheme(t){
     root.style.setProperty('--ink',t.textColor);root.style.setProperty('--ink2',t.textColor);root.style.setProperty('--ink3',t.textColor);
     root.style.setProperty('--line',lightInk?'rgba(255,255,255,.3)':'rgba(0,0,0,.16)');
   }
+  if(typeof postEcrsAppearance==='function')postEcrsAppearance();
 }
 
 function avgBrightness(blob){
@@ -1829,6 +1845,19 @@ var ROUTES=[
 ];
 var TITLES={worktime:'标准工时','worktime-retest':'工时复测',recycle:'回收站',home:'今日工作台',projects:'项目中心',tasks:'任务 Inbox',ecrs:'ECRS 动作分析',risks:'风险避雷',review:'工作复盘',data:'数据管理',mail:'邮件中心',appearance:'界面设置',info:'信息中心'};
 
+function navIsCollapsed(){try{return localStorage.getItem('wb_nav_collapsed')==='1';}catch(e){return document.documentElement.classList.contains('nav-collapsed');}}
+function applyNavCollapsed(collapsed){
+  document.documentElement.classList.toggle('nav-collapsed',!!collapsed);
+  var btn=document.getElementById('navCollapse');
+  if(!btn)return;
+  btn.setAttribute('aria-expanded',collapsed?'false':'true');
+  btn.setAttribute('aria-label',collapsed?'展开功能导航':'收起功能导航');
+}
+function toggleNavCollapsed(){
+  var next=!document.documentElement.classList.contains('nav-collapsed');
+  try{localStorage.setItem('wb_nav_collapsed',next?'1':'0');}catch(e){}
+  applyNavCollapsed(next);
+}
 function buildNav(){
   var s='',t='';
   ROUTES.forEach(function(r){
@@ -2397,8 +2426,31 @@ window.addEventListener('message',function(event){
   if(event.data.type==='save'&&Array.isArray(event.data.projects)){state.ecrsProjects=event.data.projects;save().then(function(){if(typeof toast==='function')toast('ECRS 分析数据已同步到工作台');});}
   if(event.data.type==='video-error'){var detail=operationFaultDetail({name:event.data.errorName||'Error',message:event.data.message,stack:event.data.stack});detail.source='ecrs';detail.eventName='error';if(Number.isInteger(event.data.code))detail.media=event.data.code;logOperation('ecrs_video',detail);return;}
   if(event.data.type==='trace'){var traceDetail=event.data.detail||{},traceName=event.data.event==='video'?'ecrs_video':event.data.event==='file'?'file_import':'ecrs_ui';traceDetail.source='ecrs';if(event.data.event&&traceName!=='ecrs_video')traceDetail.eventName=event.data.event;logOperation(traceName,traceDetail);return;}
-  if(event.data.type==='request'&&event.source)event.source.postMessage({source:'wb-host',type:'projects',projects:state.ecrsProjects||[]},location.origin);
+  if(event.data.type==='layout'&&event.source){
+    var frames=document.querySelectorAll('iframe.ecrs-frame');
+    for(var fi=0;fi<frames.length;fi++){
+      if(frames[fi].contentWindow!==event.source)continue;
+      var nextH=Math.ceil(Number(event.data.height)||0);
+      if(nextH>=240&&nextH<=8000)frames[fi].style.height=(nextH+4)+'px';
+    }
+    return;
+  }
+  if(event.data.type==='request'&&event.source){
+    event.source.postMessage({source:'wb-host',type:'projects',projects:state.ecrsProjects||[]},location.origin);
+    postEcrsAppearance(event.source);
+  }
 });
+function postEcrsAppearance(target){
+  var frame=document.querySelector('#view-ecrs iframe.ecrs-frame');
+  var win=target||(frame&&frame.contentWindow);
+  if(!win)return;
+  var root=document.documentElement,cs=getComputedStyle(root);
+  var names=['--bg','--card','--raised','--ink','--ink2','--ink3','--line','--brand','--brand-d','--brand-soft','--red','--red-soft','--amber','--amber-soft','--green','--green-soft','--shadow','--pa','--blur','--glass','--glass-edge','--surface-rgb'];
+  var vars={};
+  names.forEach(function(name){vars[name]=cs.getPropertyValue(name).trim();});
+  var bg=document.getElementById('bgLayer'),sh=document.getElementById('bgShade');
+  try{win.postMessage({source:'wb-host',type:'appearance',live:root.classList.contains('theme-live'),light:root.classList.contains('tl-light'),vars:vars,layer:{backgroundColor:bg&&bg.style.backgroundColor||'',backgroundImage:bg&&bg.style.backgroundImage||'',backgroundSize:bg&&bg.style.backgroundSize||'',backgroundPosition:bg&&bg.style.backgroundPosition||'',backgroundRepeat:bg&&bg.style.backgroundRepeat||'no-repeat'},shade:sh&&(sh.style.background||sh.style.backgroundColor)||''},location.origin);}catch(e){}
+}
 window.addEventListener('message',function(event){
   if(!event.data||event.data.source!=='wb-sheet')return;
   var frame=document.querySelector('.product-univer-frame');
@@ -2415,6 +2467,9 @@ function init(){
   var wk=['日','一','二','三','四','五','六'][t.getDay()];
   document.getElementById('topDate').textContent=t.getFullYear()+'年'+(t.getMonth()+1)+'月'+t.getDate()+'日 · 星期'+wk;
   buildNav();
+  applyNavCollapsed(navIsCollapsed());
+  var navCollapse=document.getElementById('navCollapse');
+  if(navCollapse)navCollapse.addEventListener('click',toggleNavCollapsed);
   window.addEventListener('hashchange',route);
   route();
   // 启动时先把本地变更上传，再拉取合并云端（避免本地未上传修改被覆盖）
@@ -3901,7 +3956,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.15.1';
+var WORKBENCH_BUILD='2026.11.15.2';
 /* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;

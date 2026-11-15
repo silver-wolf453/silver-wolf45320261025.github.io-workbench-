@@ -161,10 +161,32 @@
     if(box)box.hidden=!message;
     var status=document.getElementById('videoStatus');if(status)status.textContent=message||'';
   }
+  function fitStage(el){
+    if(!el||el.hidden)return;
+    var intrinsicW=el.tagName==='CANVAS'?el.width:el.videoWidth;
+    var intrinsicH=el.tagName==='CANVAS'?el.height:el.videoHeight;
+    if(!intrinsicW||!intrinsicH||intrinsicW<2||intrinsicH<2)return;
+    var host=el.parentElement,maxW=intrinsicW;
+    if(host){
+      var hostStyle=getComputedStyle(host);
+      maxW=host.clientWidth-(parseFloat(hostStyle.paddingLeft)||0)-(parseFloat(hostStyle.paddingRight)||0);
+    }
+    if(!(maxW>40))return;
+    var height=Math.min(360,maxW*intrinsicH/intrinsicW);
+    var width=height*intrinsicW/intrinsicH;
+    if(width>maxW){width=maxW;height=width*intrinsicH/intrinsicW;}
+    el.style.width=Math.round(width)+'px';
+    el.style.height=Math.round(height)+'px';
+  }
   function useCanvas(on){
     var canvas=document.getElementById('hevcCanvas');
-    player.hidden=!!on;if(canvas)canvas.hidden=!on;
+    player.hidden=!!on;
+    if(canvas){
+      canvas.hidden=!on;
+      if(!on){canvas.style.width='';canvas.style.height='';}
+    }
     if(!on&&hevcControl){hevcControl.stop();hevcControl=null;}
+    if(on&&canvas)fitStage(canvas);else fitStage(player);
   }
   function reportVideo(error){
     var message=error&&error.message?String(error.message):'视频无法播放';
@@ -229,7 +251,7 @@
     if(window.FFmpegWASM&&window.FFmpegWASM.FFmpeg)return Promise.resolve();
     return new Promise(function(resolve,reject){
       var script=document.createElement('script');
-      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.15.1',location.href).href;
+      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.15.2',location.href).href;
       script.onload=function(){resolve();};script.onerror=function(){reject(new Error('转码组件加载失败'));};
       document.head.appendChild(script);
     });
@@ -254,8 +276,8 @@
         bar.value=ratio;
         if(ratio>0.01){var elapsed=(performance.now()-started)/1000;eta.textContent='正在转为 H.264… 约还需 '+formatRemain(elapsed/ratio-elapsed); }
       });
-      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.15.1',location.href).href;
-      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.15.1',location.href).href;
+      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.15.2',location.href).href;
+      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.15.2',location.href).href;
       return ffmpeg.load({coreURL:core,wasmURL:wasm});
     }).then(function(){
       if(cancelled||!ffmpeg)return;
@@ -316,7 +338,7 @@
   document.getElementById('back').onclick=function(){step(-1);};
   document.getElementById('forward').onclick=function(){step(1);};
   player.addEventListener('timeupdate',function(){document.getElementById('clock').textContent=fmt(player.currentTime||0);});
-  player.addEventListener('loadedmetadata',renderTimeline);
+  player.addEventListener('loadedmetadata',function(){fitStage(player);renderTimeline();reportLayout();});
 
   function newAction(start,end){return {id:uid(),description:'',start:start,end:end,value:'necessary',ecrs:'R',direction:''};}
   document.getElementById('markStart').onclick=function(){project.actions.push(newAction(player.currentTime,null));render();};
@@ -389,9 +411,22 @@
     });
   }
 
+  function applyAppearance(data){
+    if(!data||data.type!=='appearance')return;
+    var root=document.documentElement;
+    root.classList.toggle('theme-live',!!data.live);
+    root.classList.toggle('tl-light',!!data.light);
+    var vars=data.vars||{};
+    Object.keys(vars).forEach(function(key){
+      if(vars[key])root.style.setProperty(key,vars[key]);
+      else root.style.removeProperty(key);
+    });
+    reportLayout();
+  }
   window.addEventListener('message',function(event){
     if(event.origin!==location.origin||!event.data||event.data.source!=='wb-host')return;
     if(event.data.type==='projects'&&Array.isArray(event.data.projects)){archive=event.data.projects;renderArchive();}
+    if(event.data.type==='appearance')applyAppearance(event.data);
   });
   function trace(eventName,detail){
     try{parent.postMessage({source:'wb-ecrs',type:'trace',event:eventName,detail:detail||{}},location.origin);}catch(ignore){}
@@ -416,7 +451,21 @@
       trace('video',detail);
     });
   });
+  function reportLayout(){
+    var block=document.querySelector('.ecrs');
+    var height=block?Math.ceil(block.offsetTop+block.offsetHeight):Math.ceil(document.body.offsetHeight);
+    if(!height||reportLayout.last===height)return;
+    reportLayout.last=height;
+    try{parent.postMessage({source:'wb-ecrs',type:'layout',height:height},location.origin);}catch(ignore){}
+  }
+  var hevcCanvas=document.getElementById('hevcCanvas');
+  if(window.MutationObserver&&hevcCanvas){
+    new MutationObserver(function(){if(!hevcCanvas.hidden)fitStage(hevcCanvas);reportLayout();}).observe(hevcCanvas,{attributes:true,attributeFilter:['width','height','hidden']});
+  }
+  window.addEventListener('resize',function(){fitStage(player.hidden?hevcCanvas:player);reportLayout();});
+  if(window.ResizeObserver)new ResizeObserver(reportLayout).observe(document.body);
   try{archive=JSON.parse(localStorage.getItem('wb_ecrs_archive')||'[]');}catch(e){archive=[];}
   parent.postMessage({source:'wb-ecrs',type:'request'},location.origin);
   render();
+  reportLayout();
 })();
