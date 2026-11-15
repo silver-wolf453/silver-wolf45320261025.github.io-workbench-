@@ -229,7 +229,7 @@
     if(window.FFmpegWASM&&window.FFmpegWASM.FFmpeg)return Promise.resolve();
     return new Promise(function(resolve,reject){
       var script=document.createElement('script');
-      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.14.5',location.href).href;
+      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.15.1',location.href).href;
       script.onload=function(){resolve();};script.onerror=function(){reject(new Error('转码组件加载失败'));};
       document.head.appendChild(script);
     });
@@ -254,8 +254,8 @@
         bar.value=ratio;
         if(ratio>0.01){var elapsed=(performance.now()-started)/1000;eta.textContent='正在转为 H.264… 约还需 '+formatRemain(elapsed/ratio-elapsed); }
       });
-      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.14.5',location.href).href;
-      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.14.5',location.href).href;
+      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.15.1',location.href).href;
+      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.15.1',location.href).href;
       return ffmpeg.load({coreURL:core,wasmURL:wasm});
     }).then(function(){
       if(cancelled||!ffmpeg)return;
