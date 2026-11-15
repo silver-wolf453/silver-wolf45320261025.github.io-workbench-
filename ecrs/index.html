@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
 <script>if(window.parent!==window)document.documentElement.classList.add('embedded');</script>
-<link rel="stylesheet" href="app.css?v=2026.11.15.2">
+<link rel="stylesheet" href="app.css?v=2026.11.15.3">
 </head>
 <body>
 <div class="ecrs">
@@ -28,8 +28,13 @@
     <p class="footer">时间轴与分段标注改编自 MIT 许可的 arxiver/video-annotator（Copyright (c) 2022 rrrohamed）。许可证见 VIDEO_ANNOTATOR_MIT.txt。</p>
   </section>
   <section class="panel">
-    <video id="player" controls playsinline preload="metadata"></video>
-    <canvas id="hevcCanvas" hidden></canvas>
+    <div class="stage" id="stage">
+      <p class="stage-empty" id="stageEmpty">导入视频后在此播放</p>
+      <div class="stage-zoom" id="stageZoom">
+        <video id="player" controls playsinline preload="metadata" draggable="false"></video>
+        <canvas id="hevcCanvas" hidden></canvas>
+      </div>
+    </div>
     <p id="videoStatus" class="muted" role="status"></p>
     <div id="videoFix" hidden>
       <p id="videoFixText"></p>
@@ -44,6 +49,7 @@
       <button class="btn" id="play" type="button">播放</button>
       <button class="btn" id="pause" type="button">暂停</button>
       <span class="speeds" id="speeds"></span>
+      <button class="btn" id="zoomToggle" type="button" aria-pressed="false" title="打开后，指针在视频上时滚轮放大画面，页面不会跟着滚动">放大</button>
       <button class="btn" id="back" type="button">上一帧</button>
       <button class="btn" id="forward" type="button">下一帧</button>
       <label>微调秒数 <input id="nudge" type="number" step="0.01" value="0.04" style="width:80px"></label>
@@ -62,8 +68,8 @@
     <div class="stats" id="stats"></div>
   </section>
 </div>
-<script src="mp4.js?v=2026.11.15.2"></script>
-<script src="hevc.js?v=2026.11.15.2"></script>
-<script src="app.js?v=2026.11.15.2"></script>
+<script src="mp4.js?v=2026.11.15.3"></script>
+<script src="hevc.js?v=2026.11.15.3"></script>
+<script src="app.js?v=2026.11.15.3"></script>
 </body>
 </html>

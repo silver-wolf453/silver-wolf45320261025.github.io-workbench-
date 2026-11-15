@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.15.2">
+<meta name="application-version" content="2026.11.15.3">
 <!--
   第三方组件随本仓库提供，打开工作台不需要 CDN。
   Univer 1.4.0：vendor/univer-1.4.0.js 与 vendor/univer-1.4.0.css（Apache-2.0，依赖许可保留在文件内）
@@ -48,10 +48,22 @@ svg{display:block}
 .nav-collapse:hover{background:var(--raised);color:var(--ink)}
 .nav-collapse:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .nav-collapse svg{width:18px;height:18px}
-html.nav-collapsed{--sidebar:56px}
+html.nav-collapsed{--sidebar:0px}
 html.nav-collapsed .logo,html.nav-collapsed #sideNav{display:none}
-html.nav-collapsed .sidebar{padding:12px 8px;align-items:center}
-html.nav-collapsed .sidebar-head{margin:0;justify-content:center}
+html.nav-collapsed .sidebar{
+  width:auto;height:auto;min-height:0;bottom:auto;
+  padding:12px 0 0 12px;align-items:flex-start;
+  background:transparent;border:none;box-shadow:none;
+  pointer-events:none;
+}
+html.nav-collapsed .sidebar-head{margin:0;justify-content:flex-start}
+html.nav-collapsed .nav-collapse{
+  pointer-events:auto;
+  background:#fff;color:#111827;
+  border:1px solid rgba(17,24,39,.22);
+  box-shadow:0 1px 4px rgba(0,0,0,.28);
+}
+html.nav-collapsed .nav-collapse:hover{background:#F5F7FA;color:#111827}
 html.theme-live.surface-dark .sidebar{--ink:#fff;--ink2:rgba(255,255,255,.88);--ink3:rgba(255,255,255,.62);--line:rgba(255,255,255,.3);--raised:rgba(255,255,255,.12);background:rgba(18,26,40,max(.78,var(--pa)))}
 .logo .mark{width:28px;height:28px;border-radius:8px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
 #sideNav{display:flex;flex-direction:column;gap:4px;overflow-y:auto;min-height:0;flex:1;scrollbar-width:thin}
@@ -79,6 +91,9 @@ html.theme-live.surface-dark .sidebar{--ink:#fff;--ink2:rgba(255,255,255,.88);--
   .main{margin-left:var(--sidebar);padding-bottom:0;min-height:100vh;min-height:100dvh}
   .tabbar{display:none}
   .wrap{padding:24px 32px 48px}
+  html.nav-collapsed .wrap{padding-left:64px}
+  html.nav-collapsed body::before,
+  html.theme-live.surface-dark.nav-collapsed body::before{content:none;display:none;width:0;border:none;background:transparent}
 }
 @media(max-width:899px){
   .topbar h1,#taskInboxHeading{font-size:24px;line-height:28px}
@@ -235,6 +250,12 @@ html.theme-live body{background:transparent}
 html.theme-live .sidebar,html.theme-live .tabbar,html.theme-live .modal{
   background:var(--panel);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)
 }
+html.theme-live.nav-collapsed .sidebar,
+html.theme-live.surface-dark.nav-collapsed .sidebar{
+  background:transparent;border:none;box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+html.ecrs-stage-lock,html.ecrs-stage-lock body{overflow:hidden}
 html.theme-live .view:not(#view-projects) .card:not(.item-colored),
 html.theme-live .view:not(#view-projects) .stat,
 html.theme-live #view-risks .risk{
@@ -1852,6 +1873,8 @@ function applyNavCollapsed(collapsed){
   if(!btn)return;
   btn.setAttribute('aria-expanded',collapsed?'false':'true');
   btn.setAttribute('aria-label',collapsed?'展开功能导航':'收起功能导航');
+  var chevron=btn.querySelector('svg path:last-child');
+  if(chevron)chevron.setAttribute('d',collapsed?'M13 9l3 3-3 3':'M15 9l-3 3 3 3');
 }
 function toggleNavCollapsed(){
   var next=!document.documentElement.classList.contains('nav-collapsed');
@@ -1871,6 +1894,7 @@ function buildNav(){
   });
 }
 function route(){
+  setEcrsStageScrollLock(false);
   refreshWorktimeReviews();
   if(typeof closeTaskStatusMenu==='function')closeTaskStatusMenu();
   cancelTaskSelection();cancelTaskDrag();
@@ -2420,8 +2444,35 @@ function renderEcrs(){
   var view=document.getElementById('view-ecrs');
   view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" allow="autoplay; fullscreen; picture-in-picture" src="'+workbenchAssetHref('ecrs/index.html?v='+WORKBENCH_BUILD)+'"></iframe>';
 }
+function setEcrsStageScrollLock(on){
+  var root=document.documentElement,body=document.body;
+  if(!body)return;
+  if(on){
+    if(root.classList.contains('ecrs-stage-lock'))return;
+    var y=window.scrollY||root.scrollTop||0;
+    body.dataset.ecrsLockY=String(y);
+    root.classList.add('ecrs-stage-lock');
+    body.style.position='fixed';
+    body.style.top=(-y)+'px';
+    body.style.left='0';
+    body.style.right='0';
+    body.style.width='100%';
+    return;
+  }
+  if(!root.classList.contains('ecrs-stage-lock'))return;
+  var y=parseInt(body.dataset.ecrsLockY||'0',10)||0;
+  root.classList.remove('ecrs-stage-lock');
+  body.style.position='';
+  body.style.top='';
+  body.style.left='';
+  body.style.right='';
+  body.style.width='';
+  delete body.dataset.ecrsLockY;
+  window.scrollTo(0,y);
+}
 window.addEventListener('message',function(event){
   if(event.origin!==location.origin||!event.data||event.data.source!=='wb-ecrs')return;
+  if(event.data.type==='stage-scroll'){setEcrsStageScrollLock(!!event.data.lock);return;}
   if(!Array.isArray(state.ecrsProjects))state.ecrsProjects=[];
   if(event.data.type==='save'&&Array.isArray(event.data.projects)){state.ecrsProjects=event.data.projects;save().then(function(){if(typeof toast==='function')toast('ECRS 分析数据已同步到工作台');});}
   if(event.data.type==='video-error'){var detail=operationFaultDetail({name:event.data.errorName||'Error',message:event.data.message,stack:event.data.stack});detail.source='ecrs';detail.eventName='error';if(Number.isInteger(event.data.code))detail.media=event.data.code;logOperation('ecrs_video',detail);return;}
@@ -3956,7 +4007,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.15.2';
+var WORKBENCH_BUILD='2026.11.15.3';
 /* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;

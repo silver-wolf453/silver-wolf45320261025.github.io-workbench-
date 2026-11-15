@@ -49,8 +49,32 @@ html.theme-live .btn.primary,.speeds button[aria-pressed=true]{background:var(--
 .field input[type=text]{width:100%;padding:7px 8px}
 html.theme-live .field input[type=text],html.theme-live #newField,html.theme-live #nudge,html.theme-live td input,html.theme-live td select{background:rgba(var(--surface-rgb),.72)}
 .icon{width:30px;height:30px;border:0;background:transparent;cursor:pointer;color:var(--red)}
-video[hidden],#hevcCanvas[hidden]{display:none !important}
-video:not([hidden]),#hevcCanvas:not([hidden]){display:block;max-width:100%;width:auto;height:auto;max-height:360px;background:#111;border-radius:10px}
+.stage{
+  position:relative;width:100%;height:540px;min-height:280px;margin:0 0 12px;
+  border-radius:10px;background:#111827;overflow:hidden;overscroll-behavior:none;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+  user-select:none;-webkit-user-select:none;
+}
+.stage-zoom{position:absolute;inset:0;transform-origin:0 0}
+.stage-empty{
+  position:relative;z-index:2;margin:0;max-width:28em;padding:0 16px;text-align:center;
+  color:rgba(255,255,255,.78);font-size:13px;line-height:1.5;pointer-events:none;
+}
+.stage-empty[hidden]{display:none}
+.stage video,.stage #hevcCanvas{
+  position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;
+  object-fit:contain;background:#111827;border-radius:0;
+}
+.stage video[hidden],.stage #hevcCanvas[hidden]{display:none !important}
+.stage video:not([hidden]),.stage #hevcCanvas:not([hidden]){display:block}
+#zoomToggle[aria-pressed=true]{background:var(--brand);color:#fff;border-color:var(--brand)}
+html.theme-live #zoomToggle[aria-pressed=true]{
+  background:var(--brand);color:#fff;border-color:var(--brand);
+  backdrop-filter:none;-webkit-backdrop-filter:none;opacity:1;
+}
+.stage.magnify-pan{cursor:grab}
+.stage.magnify-pan.is-panning{cursor:grabbing}
 #videoFix{margin-top:8px}
 #videoProgress{width:min(360px,100%);height:12px}
 #play,#videoStatus{position:relative;z-index:2}
