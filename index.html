@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.15.3">
+<meta name="application-version" content="2026.11.16.1">
 <!--
   第三方组件随本仓库提供，打开工作台不需要 CDN。
   Univer 1.4.0：vendor/univer-1.4.0.js 与 vendor/univer-1.4.0.css（Apache-2.0，依赖许可保留在文件内）
@@ -29,7 +29,7 @@ html.theme-live.tl-light body{text-shadow:0 1px 3px rgba(0,0,0,.45)}
 :root{--surface-rgb:255,255,255;--panel:var(--card);--panel-in:var(--raised)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{min-height:100%}
-html{background:var(--bg)}
+html{background:var(--bg);scrollbar-gutter:stable}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   background:var(--bg); color:var(--ink); font-size:14px; line-height:20px; font-weight:400;
@@ -255,7 +255,6 @@ html.theme-live.surface-dark.nav-collapsed .sidebar{
   background:transparent;border:none;box-shadow:none;
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
-html.ecrs-stage-lock,html.ecrs-stage-lock body{overflow:hidden}
 html.theme-live .view:not(#view-projects) .card:not(.item-colored),
 html.theme-live .view:not(#view-projects) .stat,
 html.theme-live #view-risks .risk{
@@ -1895,11 +1894,17 @@ function buildNav(){
 }
 function route(){
   setEcrsStageScrollLock(false);
+  var ecrsView=document.getElementById('view-ecrs');
+  var ecrsWasActive=!!(ecrsView&&ecrsView.classList.contains('active'));
   refreshWorktimeReviews();
   if(typeof closeTaskStatusMenu==='function')closeTaskStatusMenu();
   cancelTaskSelection();cancelTaskDrag();
   var h=(location.hash||'#home').slice(1);
   if(!TITLES[h]) h='home';
+  if(ecrsWasActive&&h!=='ecrs'&&ecrsView){
+    var leaving=ecrsView.querySelector('iframe.ecrs-frame');
+    if(leaving&&leaving.contentWindow){try{leaving.contentWindow.postMessage({source:'wb-host',type:'hidden'},location.origin);}catch(e){}}
+  }
   if(h==='worktime')prefetchWorkbenchSpreadsheet();
   document.querySelectorAll('.view').forEach(function(v){v.classList.remove('active');});
   document.getElementById('view-'+h).classList.add('active');
@@ -2442,34 +2447,24 @@ function renderInfo(){
 /* ================= 启动 ================= */
 function renderEcrs(){
   var view=document.getElementById('view-ecrs');
-  view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" allow="autoplay; fullscreen; picture-in-picture" src="'+workbenchAssetHref('ecrs/index.html?v='+WORKBENCH_BUILD)+'"></iframe>';
-}
-function setEcrsStageScrollLock(on){
-  var root=document.documentElement,body=document.body;
-  if(!body)return;
-  if(on){
-    if(root.classList.contains('ecrs-stage-lock'))return;
-    var y=window.scrollY||root.scrollTop||0;
-    body.dataset.ecrsLockY=String(y);
-    root.classList.add('ecrs-stage-lock');
-    body.style.position='fixed';
-    body.style.top=(-y)+'px';
-    body.style.left='0';
-    body.style.right='0';
-    body.style.width='100%';
+  var frame=view.querySelector('iframe.ecrs-frame');
+  if(frame&&frame.contentWindow){
+    try{frame.contentWindow.postMessage({source:'wb-host',type:'shown'},location.origin);}catch(e){}
+    postEcrsAppearance(frame.contentWindow);
     return;
   }
-  if(!root.classList.contains('ecrs-stage-lock'))return;
-  var y=parseInt(body.dataset.ecrsLockY||'0',10)||0;
-  root.classList.remove('ecrs-stage-lock');
-  body.style.position='';
-  body.style.top='';
-  body.style.left='';
-  body.style.right='';
-  body.style.width='';
-  delete body.dataset.ecrsLockY;
-  window.scrollTo(0,y);
+  view.innerHTML='<iframe class="ecrs-frame" title="ECRS 视频动作分析" allow="autoplay; fullscreen; picture-in-picture" src="'+workbenchAssetHref('ecrs/index.html?v='+WORKBENCH_BUILD)+'"></iframe>';
 }
+var ecrsStagePointer=false;
+function setEcrsStageScrollLock(on){
+  ecrsStagePointer=!!on;
+}
+window.addEventListener('wheel',function(event){
+  if(!ecrsStagePointer) return;
+  var view=document.getElementById('view-ecrs');
+  if(!view||!view.classList.contains('active')) return;
+  event.preventDefault();
+},{capture:true,passive:false});
 window.addEventListener('message',function(event){
   if(event.origin!==location.origin||!event.data||event.data.source!=='wb-ecrs')return;
   if(event.data.type==='stage-scroll'){setEcrsStageScrollLock(!!event.data.lock);return;}
@@ -4007,7 +4002,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.15.3';
+var WORKBENCH_BUILD='2026.11.16.1';
 /* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;

@@ -25,6 +25,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink)}
+html{scrollbar-gutter:stable}
 html.embedded,html.embedded body,html.theme-live,html.theme-live body{background:transparent}
 html.theme-live.tl-light body{text-shadow:0 1px 3px rgba(0,0,0,.45)}
 button,input,select,textarea{font:inherit;color:inherit}

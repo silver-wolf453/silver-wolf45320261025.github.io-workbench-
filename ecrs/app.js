@@ -1,4 +1,7 @@
 (function(){
+  function boot(){
+  var ECRS_BUILD='2026.11.16.1';
+  try{performance.mark('ecrs-app-start');}catch(e){}
   var SPEEDS=[0.25,0.5,1,2,3,4];
   var VALUE={value:'增值',necessary:'必要非增值',waste:'浪费'};
   var ECRS={E:'取消(E)',C:'合并(C)',R:'重排(R)',S:'简化(S)'};
@@ -8,7 +11,7 @@
     {id:'operator',label:'作业员编号',value:'',required:false},
     {id:'date',label:'拍摄日期',value:'',required:true},
     {id:'workshop',label:'车间',value:'',required:false}
-  ],actions:[]};
+  ],actions:[],marks:[]};
   var archive=[];
   var player=document.getElementById('player');
   var hevcControl=null;
@@ -23,8 +26,48 @@
   function uid(){return 'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
   function clone(value){return JSON.parse(JSON.stringify(value));}
   function payload(){var data=clone(project);delete data.videoKey;return data;}
-  function duration(action){return action.end==null||action.start==null?0:Math.max(0,action.end-action.start);}
+  function round2(n){return window.EcrsActions?EcrsActions.round2(n):Math.round((Number(n)||0)*100)/100;}
+  function duration(action){return window.EcrsActions?EcrsActions.duration(action):(action.end==null||action.start==null?0:Math.max(0,action.end-action.start));}
   function fmt(seconds){return (Number(seconds)||0).toFixed(2)+'s';}
+  function refreshActions(){
+    if(!Array.isArray(project.marks)||!window.EcrsActions) return;
+    project.actions=EcrsActions.rowsFromMarks(project.marks);
+  }
+  function eachTagged(id,fn){
+    project.actions.forEach(function(action){if(action.id===id) fn(action);});
+    if(Array.isArray(project.marks)) project.marks.forEach(function(mark){if(mark.id===id) fn(mark);});
+  }
+  function openStartIndex(){
+    if(!Array.isArray(project.marks)) return -1;
+    var open=-1;
+    for(var i=0;i<project.marks.length;i++){
+      if(project.marks[i].type==='start') open=i;
+      else if(project.marks[i].type==='end') open=-1;
+    }
+    return open;
+  }
+  function removeMark(id){
+    if(!Array.isArray(project.marks)){project.actions=project.actions.filter(function(action){return action.id!==id;});return;}
+    var idx=-1;
+    for(var i=0;i<project.marks.length;i++) if(project.marks[i].id===id) idx=i;
+    if(idx<0){project.actions=project.actions.filter(function(action){return action.id!==id;});return;}
+    if(project.marks[idx].type==='start'){
+      var end=idx+1;
+      while(end<project.marks.length&&project.marks[end].type!=='start') end++;
+      project.marks.splice(idx,end-idx);
+    }else project.marks.splice(idx,1);
+    refreshActions();
+  }
+  function clearWorkingAnalysis(){
+    project.marks=[];
+    project.actions=[];
+    render();
+  }
+  function markTime(){
+    var t=player.currentTime||0;
+    if(t<0) t=0;
+    return round2(t);
+  }
 
   function openDb(){
     return new Promise(function(resolve,reject){
@@ -75,9 +118,9 @@
     });
   }
   function renderStats(){
-    var total=project.actions.reduce(function(sum,action){return sum+duration(action);},0);
-    var buckets={value:0,necessary:0,waste:0};
-    project.actions.forEach(function(action){buckets[action.value]=(buckets[action.value]||0)+duration(action);});
+    var summary=window.EcrsActions?EcrsActions.statsFromRows(project.actions):{total:0,buckets:{value:0,necessary:0,waste:0}};
+    var total=summary.total;
+    var buckets=summary.buckets;
     document.getElementById('stats').innerHTML=['value','necessary','waste'].map(function(key){
       var share=total?Math.round(buckets[key]/total*1000)/10:0;
       return '<div class="stat"><span>'+VALUE[key]+'</span><b>'+fmt(buckets[key])+'</b><span>'+share+'%</span></div>';
@@ -109,19 +152,18 @@
   };
   document.getElementById('table').addEventListener('input',function(event){
     var id=event.target.getAttribute('data-desc')||event.target.getAttribute('data-direction');
-    project.actions.forEach(function(action){if(action.id!==id)return;if(event.target.hasAttribute('data-desc'))action.description=event.target.value;else action.direction=event.target.value;});
+    if(!id)return;
+    eachTagged(id,function(action){if(event.target.hasAttribute('data-desc'))action.description=event.target.value;else action.direction=event.target.value;});
   });
   document.getElementById('table').addEventListener('change',function(event){
     var valueId=event.target.getAttribute('data-value'),ecrsId=event.target.getAttribute('data-ecrs');
-    project.actions.forEach(function(action){
-      if(action.id===valueId)action.value=event.target.value;
-      if(action.id===ecrsId)action.ecrs=event.target.value;
-    });
+    if(valueId) eachTagged(valueId,function(action){action.value=event.target.value;});
+    if(ecrsId) eachTagged(ecrsId,function(action){action.ecrs=event.target.value;});
     renderTimeline();renderStats();
   });
   document.getElementById('table').addEventListener('click',function(event){
     var id=event.target.getAttribute('data-del');if(!id)return;
-    project.actions=project.actions.filter(function(action){return action.id!==id;});render();
+    removeMark(id);render();
   });
 
   function mimeFor(name,fallback){
@@ -265,7 +307,7 @@
         player.removeEventListener('loadeddata',onLoad);
         player.removeEventListener('error',onError);
         if(!error&&previous)URL.revokeObjectURL(previous);
-        if(error)reject(error);else{var status=document.getElementById('videoStatus');if(status)status.textContent='';resolve();}
+        if(error)reject(error);else{applySelectedRate();var status=document.getElementById('videoStatus');if(status)status.textContent='';resolve();}
       }
       function onLoad(){finish();}
       function onError(){var code=player.error&&player.error.code;if(code===1)return;finish(new Error(videoErrorMessage(player,type)));}
@@ -286,13 +328,8 @@
       document.getElementById('videoStatus').textContent='音轨无法解码，正在去掉音轨…';
       return EcrsMp4.dropAudio(file).then(function(blob){return showVideo(blob,file.name);}).then(function(){showFix('已去掉无法解码的音轨，正在播放画面。',false);trace('video',{eventName:'remux',command:'codec.video-only',message:'去掉音轨后播放'});}).catch(function(){return offerTranscode(file,info,message);});
     }
-    if(window.EcrsMp4&&EcrsMp4.hevc(info)&&window.EcrsHevc){
-      return EcrsHevc.supported(info.video).then(function(ok){
-        trace('video',{eventName:'webcodecs',command:ok?'codec.webcodecs-yes':'codec.webcodecs-no',message:info.video.codecString||info.video.codec});
-        if(!ok)return offerTranscode(file,info,message);
-        useCanvas(true);
-        return EcrsHevc.attach(file,info,player,document.getElementById('hevcCanvas')).then(function(control){hevcControl=control;showFix('正在用浏览器的 HEVC 解码器播放。',false);});
-      }).catch(function(){return offerTranscode(file,info,message);});
+    if(window.EcrsMp4&&EcrsMp4.hevc(info)&&desktopVideo()){
+      return playHevc(file,info).then(function(ok){if(!ok)return offerTranscode(file,info,message);}).catch(function(){return offerTranscode(file,info,message);});
     }
     return offerTranscode(file,info,message);
   }
@@ -303,7 +340,7 @@
     if(window.FFmpegWASM&&window.FFmpegWASM.FFmpeg)return Promise.resolve();
     return new Promise(function(resolve,reject){
       var script=document.createElement('script');
-      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v=2026.11.15.3',location.href).href;
+      script.src=new URL('../vendor/ffmpeg/ffmpeg.js?v='+ECRS_BUILD,location.href).href;
       script.onload=function(){resolve();};script.onerror=function(){reject(new Error('转码组件加载失败'));};
       document.head.appendChild(script);
     });
@@ -328,8 +365,8 @@
         bar.value=ratio;
         if(ratio>0.01){var elapsed=(performance.now()-started)/1000;eta.textContent='正在转为 H.264… 约还需 '+formatRemain(elapsed/ratio-elapsed); }
       });
-      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v=2026.11.15.3',location.href).href;
-      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v=2026.11.15.3',location.href).href;
+      var core=new URL('../vendor/ffmpeg/ffmpeg-core.js?v='+ECRS_BUILD,location.href).href;
+      var wasm=new URL('../vendor/ffmpeg/ffmpeg-core.wasm?v='+ECRS_BUILD,location.href).href;
       return ffmpeg.load({coreURL:core,wasmURL:wasm});
     }).then(function(){
       if(cancelled||!ffmpeg)return;
@@ -349,15 +386,54 @@
     }).catch(function(error){if(!cancelled){reportVideo(error);document.getElementById('videoStatus').textContent=error&&error.message||'转码失败';}}).then(function(){button.disabled=false;cancel.hidden=true;bar.hidden=true;});
   }
   document.getElementById('videoTranscode').onclick=startTranscode;
+  function loadScriptOnce(url){
+    var key=url.split('?')[0];
+    if(loadScriptOnce.cache[key]) return loadScriptOnce.cache[key];
+    loadScriptOnce.cache[key]=new Promise(function(resolve,reject){
+      var script=document.createElement('script');
+      script.src=url;
+      script.async=true;
+      script.onload=function(){resolve();};
+      script.onerror=function(){loadScriptOnce.cache[key]=null;reject(new Error('组件加载失败'));};
+      document.head.appendChild(script);
+    });
+    return loadScriptOnce.cache[key];
+  }
+  loadScriptOnce.cache={};
+  function loadMp4(){
+    if(window.EcrsMp4) return Promise.resolve();
+    return loadScriptOnce(new URL('mp4.js?v='+ECRS_BUILD,location.href).href);
+  }
+  function loadHevc(){
+    if(window.EcrsHevc) return Promise.resolve();
+    return loadScriptOnce(new URL('hevc.js?v='+ECRS_BUILD,location.href).href);
+  }
+  function playHevc(file,info){
+    return loadHevc().then(function(){
+      return EcrsHevc.supported(info.video).then(function(ok){
+        trace('video',{eventName:'webcodecs',command:ok?'codec.webcodecs-yes':'codec.webcodecs-no',message:info.video.codecString||info.video.codec});
+        if(!ok) return false;
+        useCanvas(true);
+        return EcrsHevc.attach(file,info,player,document.getElementById('hevcCanvas')).then(function(control){
+          hevcControl=control;
+          applySelectedRate();
+          showFix('正在用浏览器的 HEVC 解码器播放。',false);
+          return true;
+        });
+      });
+    });
+  }
   function openVideoFile(file){
     activeFile=file;useCanvas(false);showFix('',false);resetZoom();
-    var inspect=window.EcrsMp4&&/\.mp4$|\.m4v$|\.mov$/i.test(file.name||'')?EcrsMp4.inspectFile(file):Promise.resolve(null);
-    inspect.then(function(info){
+    var inspectable=/\.mp4$|\.m4v$|\.mov$/i.test(file.name||'')||/mp4|quicktime/i.test(file.type||'');
+    var prepare=inspectable?loadMp4():Promise.resolve();
+    prepare.then(function(){
+      return window.EcrsMp4&&inspectable?EcrsMp4.inspectFile(file):null;
+    }).then(function(info){
       logCodec(info,file);
-      if(info&&window.EcrsMp4&&EcrsMp4.hevc(info)&&desktopVideo()&&window.EcrsHevc){
-        return EcrsHevc.supported(info.video).then(function(ok){
-          trace('video',{eventName:'webcodecs',command:ok?'codec.webcodecs-yes':'codec.webcodecs-no',message:info.video.codecString||info.video.codec});
-          if(ok){useCanvas(true);return EcrsHevc.attach(file,info,player,document.getElementById('hevcCanvas')).then(function(control){hevcControl=control;showFix('正在用浏览器的 HEVC 解码器播放。',false);});}
+      if(info&&window.EcrsMp4&&EcrsMp4.hevc(info)&&desktopVideo()){
+        return playHevc(file,info).then(function(ok){
+          if(ok) return;
           showFix(codecMessage(info),true);
           return showVideo(file,file.name).then(function(){showFix('',false);},function(){});
         });
@@ -368,16 +444,22 @@
   }
   document.getElementById('videoFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
+    clearWorkingAnalysis();
     project.videoName=file.name;project.videoKey='video_'+project.id+'_'+Date.now().toString(36);
     openVideoFile(file);
   };
+  var selectedRate=1;
+  function applySelectedRate(){
+    try{player.playbackRate=selectedRate||1;}catch(e){}
+  }
   SPEEDS.forEach(function(speed){
     var button=document.createElement('button');button.type='button';button.className='btn';button.textContent=speed+'x';button.setAttribute('aria-pressed',speed===1?'true':'false');
-    button.onclick=function(){player.playbackRate=speed;document.querySelectorAll('#speeds button').forEach(function(item){item.setAttribute('aria-pressed',item===button?'true':'false');});};
+    button.onclick=function(){selectedRate=speed;applySelectedRate();document.querySelectorAll('#speeds button').forEach(function(item){item.setAttribute('aria-pressed',item===button?'true':'false');});};
     document.getElementById('speeds').appendChild(button);
   });
   document.getElementById('play').onclick=function(){
-    if(!player.currentSrc&&!player.src&&!player.querySelector('source')){alert('请先导入视频');return;}
+    if(!hevcControl&&!player.currentSrc&&!player.src&&!player.querySelector('source')){alert('请先导入视频');return;}
+    applySelectedRate();
     var pending=player.play();
     if(pending&&typeof pending.catch==='function')pending.catch(function(error){
       var reported=new Error('无法播放：'+(error&&error.message?error.message:videoErrorMessage(player)));
@@ -390,7 +472,7 @@
   document.getElementById('back').onclick=function(){step(-1);};
   document.getElementById('forward').onclick=function(){step(1);};
   player.addEventListener('timeupdate',function(){document.getElementById('clock').textContent=fmt(player.currentTime||0);});
-  player.addEventListener('loadedmetadata',function(){syncStageEmpty();fitStage();renderTimeline();reportLayout();});
+  player.addEventListener('loadedmetadata',function(){applySelectedRate();syncStageEmpty();fitStage();renderTimeline();reportLayout();});
   player.addEventListener('emptied',syncStageEmpty);
   (function installMagnify(){
     var btn=document.getElementById('zoomToggle');
@@ -466,15 +548,31 @@
     stage.addEventListener('dragstart',function(event){event.preventDefault();});
   })();
 
-  function newAction(start,end){return {id:uid(),description:'',start:start,end:end,value:'necessary',ecrs:'R',direction:''};}
-  document.getElementById('markStart').onclick=function(){project.actions.push(newAction(player.currentTime,null));render();};
+  function blankMark(type,time){return {id:uid(),type:type,time:time,description:'',value:'necessary',ecrs:'R',direction:''};}
+  document.getElementById('markStart').onclick=function(){
+    if(openStartIndex()>=0){alert('已有未结束的周期');return;}
+    if(!Array.isArray(project.marks)) project.marks=[];
+    project.marks.push(blankMark('start',markTime()));
+    refreshActions();render();
+  };
   document.getElementById('markEnd').onclick=function(){
-    var open=null;project.actions.forEach(function(action){if(action.end==null)open=action;});
-    if(!open){alert('没有未结束的动作');return;}
-    open.end=Math.max(open.start,player.currentTime);render();
+    var open=openStartIndex();
+    if(open<0){alert('没有未结束的动作');return;}
+    var time=markTime();
+    if(time<project.marks[open].time) time=project.marks[open].time;
+    project.marks.push(blankMark('end',time));
+    refreshActions();render();
   };
   document.getElementById('markOther').onclick=function(){
-    var time=player.currentTime;project.actions.push(newAction(time,time+0.5));render();
+    var open=openStartIndex();
+    if(open<0){alert('请先标记开始');return;}
+    var time=markTime(),prev=project.marks[open].time;
+    for(var i=open+1;i<project.marks.length;i++){
+      if(project.marks[i].type==='insert') prev=Math.max(prev,project.marks[i].time);
+    }
+    if(time<prev){alert('请在上一个标记之后插入');return;}
+    project.marks.push(blankMark('insert',time));
+    refreshActions();render();
   };
 
   function missingRequired(){return project.fields.filter(function(field){return field.required&&!String(field.value||'').trim();}).map(function(field){return field.label;});}
@@ -498,12 +596,12 @@
   document.getElementById('importJson').onclick=function(){document.getElementById('jsonFile').click();};
   document.getElementById('jsonFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
-    file.text().then(function(text){project=JSON.parse(text);project.actions=project.actions||[];project.fields=project.fields||[];if(!project.id)project.id=uid();render();});
+    file.text().then(function(text){project=JSON.parse(text);project.actions=project.actions||[];project.fields=project.fields||[];if(!project.id)project.id=uid();if(Array.isArray(project.marks))refreshActions();render();});
   };
   document.getElementById('archive').addEventListener('click',function(event){
     var id=event.target.getAttribute('data-open');if(!id)return;
     var item=archive.filter(function(entry){return entry.id===id;})[0];if(!item)return;
-    project=clone(item);render();
+    project=clone(item);if(Array.isArray(project.marks))refreshActions();render();
     if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)return showVideo(blob,item.videoName||project.videoName);}).catch(function(error){reportVideo(error);alert(error.message||'无法恢复本机视频，请重新导入');});
   });
 
@@ -520,11 +618,12 @@
     details.addRow(['序号','动作描述','开始(秒)','结束(秒)','时长(秒)','分类','ECRS','改善方向']);
     project.actions.forEach(function(action,index){details.addRow([index+1,action.description,action.start,action.end,duration(action),VALUE[action.value]||'',ECRS[action.ecrs]||'',action.direction]);});
     var stats=workbook.addWorksheet('时间统计');
-    var total=project.actions.reduce(function(sum,action){return sum+duration(action);},0);
+    var summary=window.EcrsActions?EcrsActions.statsFromRows(project.actions):{total:0,buckets:{value:0,necessary:0,waste:0}};
+    var total=summary.total;
     stats.addRow(['项目字段','值']);project.fields.forEach(function(field){stats.addRow([field.label,field.value]);});
     stats.addRow([]);stats.addRow(['分类','时长(秒)','占比']);
     ['value','necessary','waste'].forEach(function(key){
-      var amount=project.actions.reduce(function(sum,action){return sum+(action.value===key?duration(action):0);},0);
+      var amount=summary.buckets[key]||0;
       stats.addRow([VALUE[key],amount,total?amount/total:0]);
     });
     stats.addRow(['总 CT',total,1]);
@@ -553,6 +652,8 @@
     if(event.origin!==location.origin||!event.data||event.data.source!=='wb-host')return;
     if(event.data.type==='projects'&&Array.isArray(event.data.projects)){archive=event.data.projects;renderArchive();}
     if(event.data.type==='appearance')applyAppearance(event.data);
+    if(event.data.type==='hidden'){try{player.pause();}catch(e){}}
+    if(event.data.type==='shown'){applySelectedRate();fitStage();syncStageEmpty();reportLayout();}
   });
   function trace(eventName,detail){
     try{parent.postMessage({source:'wb-ecrs',type:'trace',event:eventName,detail:detail||{}},location.origin);}catch(ignore){}
@@ -605,4 +706,8 @@
   syncStageEmpty();
   fitStage();
   reportLayout();
+  try{performance.mark('ecrs-app-ready');}catch(e){}
+  }
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(function(){setTimeout(boot,0);});
+  else boot();
 })();
