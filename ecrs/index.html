@@ -5,13 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
 <script>if(window.parent!==window)document.documentElement.classList.add('embedded');</script>
-<link rel="stylesheet" href="app.css?v=2026.11.16.1">
+<link rel="stylesheet" href="app.css?v=2026.11.16.2">
 </head>
 <body>
 <div class="ecrs">
   <section class="panel">
     <h1>ECRS 动作分析</h1>
-    <p class="muted">导入浏览器可播放的视频（MP4、WebM 等）。视频只留在本机，同步和 JSON 只包含分析数据。</p>
     <input id="videoFile" type="file" accept="video/mp4,video/webm,video/ogg,video/*">
     <h2>项目资料</h2>
     <div id="fields"></div>
@@ -25,7 +24,6 @@
     </div>
     <input id="jsonFile" type="file" accept="application/json,.json" hidden>
     <div id="archive"></div>
-    <p class="footer">时间轴与分段标注改编自 MIT 许可的 arxiver/video-annotator（Copyright (c) 2022 rrrohamed）。许可证见 VIDEO_ANNOTATOR_MIT.txt。</p>
   </section>
   <section class="panel">
     <div class="stage" id="stage">
@@ -69,7 +67,7 @@
   </section>
 </div>
 <script>performance.mark('ecrs-shell');</script>
-<script src="actions.js?v=2026.11.16.1" defer></script>
-<script src="app.js?v=2026.11.16.1" defer></script>
+<script src="actions.js?v=2026.11.16.2" defer></script>
+<script src="app.js?v=2026.11.16.2" defer></script>
 </body>
 </html>
