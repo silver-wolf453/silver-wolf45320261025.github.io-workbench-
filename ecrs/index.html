@@ -4,26 +4,56 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
-<script>if(window.parent!==window)document.documentElement.classList.add('embedded');</script>
-<link rel="stylesheet" href="app.css?v=2026.11.16.2">
+<script>if(window.parent!==window)document.documentElement.classList.add('embedded');try{if(localStorage.getItem('wb_ecrs_panel_collapsed')==='1')document.documentElement.classList.add('ecrs-panel-collapsed');}catch(e){}</script>
+<link rel="stylesheet" href="app.css?v=2026.11.16.3">
 </head>
 <body>
+<svg class="icon-set" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="0" height="0">
+  <symbol id="i-play" viewBox="0 0 24 24">
+    <path d="M8.2 5.8v12.4L18.4 12 8.2 5.8z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24">
+    <path d="M8 6v12M16 6v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-zoom" viewBox="0 0 24 24">
+    <circle cx="10.5" cy="10.5" r="5.25" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M14.6 14.6L19.2 19.2M10.5 8.3v4.4M8.3 10.5h4.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-start" viewBox="0 0 24 24">
+    <path d="M6 4.5v15M6 5.5h9.2l-2.1 3.15 2.1 3.15H6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-end" viewBox="0 0 24 24">
+    <path d="M18 4.5v15M18 5.5H8.8l2.1 3.15-2.1 3.15H18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-insert" viewBox="0 0 24 24">
+    <rect x="5" y="5" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M12 8.5v7M8.5 12h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24">
+    <path d="M6 14.5l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</svg>
 <div class="ecrs">
-  <section class="panel">
-    <h1>ECRS 动作分析</h1>
-    <input id="videoFile" type="file" accept="video/mp4,video/webm,video/ogg,video/*">
-    <h2>项目资料</h2>
-    <div id="fields"></div>
-    <div class="row"><input id="newField" type="text" placeholder="新字段名称"><button class="btn" id="addField" type="button">添加字段</button></div>
-    <h2>项目存档</h2>
-    <div class="row">
-      <button class="btn primary" id="saveLocal" type="button">保存到本机</button>
-      <button class="btn" id="saveSync" type="button">同步到工作台</button>
-      <button class="btn" id="exportJson" type="button">导出 JSON</button>
-      <button class="btn" id="importJson" type="button">导入 JSON</button>
+  <section class="panel" id="analysisPanel">
+    <div class="analysis-head">
+      <h1>ECRS 动作分析</h1>
+      <button class="btn icon-only" id="analysisToggle" type="button" aria-expanded="true" aria-controls="analysisBody" aria-label="收起" title="收起"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chevron"/></svg></button>
     </div>
-    <input id="jsonFile" type="file" accept="application/json,.json" hidden>
-    <div id="archive"></div>
+    <div id="analysisBody">
+      <input id="videoFile" type="file" accept="video/mp4,video/webm,video/ogg,video/*">
+      <h2>项目资料</h2>
+      <div id="fields"></div>
+      <div class="row"><input id="newField" type="text" placeholder="新字段名称"><button class="btn" id="addField" type="button">添加字段</button></div>
+      <h2>项目存档</h2>
+      <div class="row">
+        <button class="btn primary" id="saveLocal" type="button">保存到本机</button>
+        <button class="btn" id="saveSync" type="button">同步到工作台</button>
+        <button class="btn" id="exportJson" type="button">导出 JSON</button>
+        <button class="btn" id="importJson" type="button">导入 JSON</button>
+      </div>
+      <input id="jsonFile" type="file" accept="application/json,.json" hidden>
+      <div id="archive"></div>
+    </div>
   </section>
   <section class="panel">
     <div class="stage" id="stage">
@@ -44,20 +74,19 @@
       <p id="videoEta" class="muted"></p>
     </div>
     <div class="row">
-      <button class="btn" id="play" type="button">播放</button>
-      <button class="btn" id="pause" type="button">暂停</button>
+      <button class="btn primary icon-only" id="play" type="button" title="播放" aria-label="播放"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play"/></svg></button>
+      <button class="btn icon-only" id="pause" type="button" title="暂停" aria-label="暂停"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pause"/></svg></button>
       <span class="speeds" id="speeds"></span>
-      <button class="btn" id="zoomToggle" type="button" aria-pressed="false" title="打开后，指针在视频上时滚轮放大画面，页面不会跟着滚动">放大</button>
+      <button class="btn icon-only" id="zoomToggle" type="button" aria-pressed="false" title="放大" aria-label="放大"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-zoom"/></svg></button>
       <button class="btn" id="back" type="button">上一帧</button>
       <button class="btn" id="forward" type="button">下一帧</button>
-      <label>微调秒数 <input id="nudge" type="number" step="0.01" value="0.04" style="width:80px"></label>
       <span id="clock">0.00s</span>
     </div>
     <div class="timeline" id="timeline"></div>
     <div class="row">
-      <button class="btn primary" id="markStart" type="button">标记开始</button>
-      <button class="btn" id="markEnd" type="button">标记结束</button>
-      <button class="btn" id="markOther" type="button">插入重叠动作</button>
+      <button class="btn icon-only" id="markStart" type="button" title="标记开始" aria-label="标记开始"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-start"/></svg></button>
+      <button class="btn icon-only" id="markEnd" type="button" title="标记结束" aria-label="标记结束"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-end"/></svg></button>
+      <button class="btn icon-only" id="markOther" type="button" title="插入重叠动作" aria-label="插入重叠动作"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-insert"/></svg></button>
       <button class="btn primary" id="exportExcel" type="button">导出 Excel</button>
     </div>
     <h2>动作明细</h2>
@@ -67,7 +96,7 @@
   </section>
 </div>
 <script>performance.mark('ecrs-shell');</script>
-<script src="actions.js?v=2026.11.16.2" defer></script>
-<script src="app.js?v=2026.11.16.2" defer></script>
+<script src="actions.js?v=2026.11.16.3" defer></script>
+<script src="app.js?v=2026.11.16.3" defer></script>
 </body>
 </html>
