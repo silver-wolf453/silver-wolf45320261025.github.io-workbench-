@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.16.1">
+<meta name="application-version" content="2026.11.16.2">
 <!--
   第三方组件随本仓库提供，打开工作台不需要 CDN。
   Univer 1.4.0：vendor/univer-1.4.0.js 与 vendor/univer-1.4.0.css（Apache-2.0，依赖许可保留在文件内）
@@ -212,7 +212,6 @@ html.theme-live.surface-dark .sidebar{--ink:#fff;--ink2:rgba(255,255,255,.88);--
 .banner{border-radius:var(--r2);padding:11px 13px;font-size:13px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start}
 .banner.info{background:var(--brand-soft);color:var(--brand-d)}
 .banner.warn{background:var(--amber-soft);color:var(--amber)}
-.banner.ok{background:var(--green-soft);color:var(--green)}
 
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;line-height:20px;opacity:0;pointer-events:none;transition:all .25s;z-index:99;white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -301,8 +300,7 @@ input[type=color]{width:46px;height:34px;padding:2px;border:1px solid var(--line
 .color-code{font-variant-numeric:tabular-nums;font-size:12px}
 .wp-preset{display:block;width:100%;padding:0}
 .wp-row select{max-width:180px;padding:5px;border:1px solid var(--line);border-radius:7px;background:var(--panel-in)}
-.project-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.project-toolbar>.muted{flex:1;min-width:150px}
+.project-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .top-actions{display:flex;align-items:center;gap:9px}
 .top-actions [hidden]{display:none}
 .btn.icon-only{width:36px;height:36px;padding:0;position:relative;flex:none}
@@ -439,7 +437,7 @@ html.theme-live #view-worktime .card,html.theme-live #view-worktime-retest .card
 .worktime-editor-totals input{font-family:var(--mono);font-size:20px;font-weight:500;font-variant-numeric:tabular-nums}
 .worktime-editor-ops{position:sticky;bottom:-22px;padding:16px 0 4px;margin-top:16px;background:var(--card);z-index:2}
 .worktime-form-error{margin-top:12px;padding:10px 12px;border:1px solid var(--red);border-radius:10px;color:var(--red);background:var(--red-soft);font-size:13px}
-.worktime-settings-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:9px}
+.worktime-settings-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .worktime-settings-form .field{margin:0;flex:1 1 180px;max-width:230px}
 .worktime-settings-form .btn{height:36px}
 .worktime-review{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--raised)}
@@ -2046,7 +2044,7 @@ function renderHome(){
     '<div class="stat"><div class="n">'+od.length+'</div><div class="l">已延期</div></div>'+
     '<div class="stat"><div class="n">'+inProj+'</div><div class="l">进行中项目</div></div></div>';
 
-  h+='<div class="card"><div class="card-h"><h3>最重要的 3 件事</h3><span class="muted">按截止日期由近到远，同日按重要程度排序</span></div>';
+  h+='<div class="card"><div class="card-h"><h3>最重要的 3 件事</h3></div>';
   if(!top.length) h+='<div class="empty">今天没有待办，<a href="#tasks">去任务里添加</a></div>';
   top.forEach(function(t,i){
     h+='<div class="focus-item f'+(i+1)+'"><div class="focus-no">'+(i+1)+'</div><div class="task-body">'+
@@ -2076,7 +2074,6 @@ function renderHome(){
 /* ================= 视图：项目中心 ================= */
 function renderProjects(){
   var h='<div class="project-toolbar">'+
-    '<span class="muted">共 '+state.projects.filter(function(p){return !p.deleted;}).length+' 个项目 · 超期或 3 天内到期自动标红</span>'+
     '<button class="btn icon-only" id="deckToggle" onclick="toggleProjectDeck()" aria-expanded="false" aria-label="散开项目" title="散开项目">'+icon('layers',18)+'</button><button class="btn sm primary" onclick="openProjModal()">＋ 新项目</button></div>';
   var plist=state.projects.filter(function(p){return !p.deleted;});
   if(!plist.length){h+='<div class="card"><div class="empty">还没有项目，点击右上角新建</div></div>';}
@@ -2300,7 +2297,6 @@ function renderAppearance(){
   h+='<input type="file" id="wpFile" accept="image/jpeg,image/png,image/webp" onchange="onWpFile(this)">';
   h+='<div class="wp-ops"><button class="btn primary" onclick="pickWallpaper()">上传本地壁纸</button>'+
     '<button class="btn" onclick="resetAppearance()">恢复默认外观</button></div>';
-  h+='<div class="tip">壁纸只保存在当前设备，不随 Gist 同步。主按钮和状态标签保持原色不透明。</div>';
   h+='</div>';
 
   document.getElementById('view-appearance').innerHTML=h;
@@ -2315,8 +2311,7 @@ function renderData(){
     '<div class="grid cols-3">'+
     '<div class="stat"><div class="n">'+state.tasks.filter(function(t){return !t.deleted;}).length+'</div><div class="l">任务</div></div>'+
     '<div class="stat"><div class="n">'+state.projects.filter(function(p){return !p.deleted;}).length+'</div><div class="l">项目</div></div>'+
-    '<div class="stat"><div class="n">'+state.mails.filter(function(m){return !m.deleted;}).length+'</div><div class="l">邮件</div></div></div>'+
-    '<div class="tip">本机 localStorage 只存在当前设备；要电脑和手机同步，请配置下面的云端同步。</div></div>';
+    '<div class="stat"><div class="n">'+state.mails.filter(function(m){return !m.deleted;}).length+'</div><div class="l">邮件</div></div></div></div>';
 
   h+='<div class="card"><div class="card-h"><h3>访问密码锁</h3><span class="chip '+(lockOn()?'green':'')+'">'+(lockOn()?'已开启':'未开启')+'</span></div>';
   if(lockOn()){
@@ -2334,10 +2329,9 @@ function renderData(){
 
   var syn=getSync();
   var synAt=localStorage.getItem('wb_sync_at')||'';
-  h+='<div class="card"><div class="card-h"><h3>云端同步（多端共享）</h3>'+(synAt?'<span class="muted">上次同步：'+esc(synAt)+'</span>':'')+'</div>';
+  h+='<div class="card"><div class="card-h"><h3>云端同步</h3>'+(synAt?'<span class="muted">上次同步：'+esc(synAt)+'</span>':'')+'</div>';
   if(syn.gistId){
-    h+='<div class="banner ok">已连接同步仓库，本设备改动会自动上传，打开页面时自动拉取。</div>'+
-      '<div class="field"><label>同步仓库 ID</label><input id="syncId" value="'+esc(syn.gistId)+'"></div>'+
+    h+='<div class="field"><label>同步仓库 ID</label><input id="syncId" value="'+esc(syn.gistId)+'"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
       '<button class="btn primary" onclick="manualPull()">立即拉取云端</button>'+
       '<button class="btn" onclick="manualPush()">立即上传本机</button>'+
@@ -2351,7 +2345,7 @@ function renderData(){
   }
   h+='</div>';
 
-  h+='<div class="card" id="operationLogCard"><div class="card-h"><h3>操作日志</h3></div><div class="operation-log-export"><label>开始<input id="operationLogStart" type="datetime-local"></label><label>结束<input id="operationLogEnd" type="datetime-local"></label><div class="operation-log-presets"><button type="button" class="btn sm" onclick="setOperationLogRange(\'today\')">今天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'week\')">近 7 天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'all\')">全部</button><button type="button" class="btn primary sm" id="exportOperationLog" onclick="exportOperationLogs()">导出</button></div></div><div class="tip">按开始和结束时间导出本机操作记录。留空表示不限制这一端。</div></div>';
+  h+='<div class="card" id="operationLogCard"><div class="card-h"><h3>日志</h3></div><div class="operation-log-export"><label>开始<input id="operationLogStart" type="datetime-local"></label><label>结束<input id="operationLogEnd" type="datetime-local"></label><div class="operation-log-presets"><button type="button" class="btn sm" onclick="setOperationLogRange(\'today\')">今天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'week\')">近 7 天</button><button type="button" class="btn sm" onclick="setOperationLogRange(\'all\')">全部</button><button type="button" class="btn primary sm" id="exportOperationLog" onclick="exportOperationLogs()">导出</button></div></div></div>';
   document.getElementById('view-data').innerHTML=h;
 }
 
@@ -3367,7 +3361,7 @@ function renderWorktimeRetest(){
   worktimeRefreshForView();
   var pending=worktimePendingReviews(state),months=state.worktimeSettings&&state.worktimeSettings.months||3;
   var history=(state.worktimeReviews||[]).filter(function(review){return review&&(review.status==='required'||review.status==='skipped');}).slice().sort(function(a,b){return String(b.decidedAt||b.updatedAt||'').localeCompare(String(a.decidedAt||a.updatedAt||''));});
-  var h='<div class="card worktime-settings"><div class="card-h"><h3>复测设置</h3><span class="chip brand">全部产品</span></div><form id="worktimeSettingsForm" class="worktime-settings-form" onsubmit="event.preventDefault();window.saveWorktimeSettings()"><div class="field"><label for="worktimeRetestMonths">复测周期（月）</label><input id="worktimeRetestMonths" type="number" min="1" max="120" step="1" required value="'+months+'"></div><button type="submit" class="btn" id="saveWorktimeSettings">保存周期</button></form><p class="muted">统一应用于所有产品，超过周期后提醒人工复判。</p></div><div class="card"><div class="card-h"><h3>待复判</h3><span class="chip amber">'+pending.length+'</span></div>';
+  var h='<div class="card worktime-settings"><div class="card-h"><h3>复测设置</h3><span class="chip brand">全部产品</span></div><form id="worktimeSettingsForm" class="worktime-settings-form" onsubmit="event.preventDefault();window.saveWorktimeSettings()"><div class="field"><label for="worktimeRetestMonths">复测周期（月）</label><input id="worktimeRetestMonths" type="number" min="1" max="120" step="1" required value="'+months+'"></div><button type="submit" class="btn" id="saveWorktimeSettings">保存周期</button></form></div><div class="card"><div class="card-h"><h3>待复判</h3><span class="chip amber">'+pending.length+'</span></div>';
   if(!pending.length)h+='<div class="empty">暂无需要复判的产品</div>';
   else pending.forEach(function(review){
     var product=(state.worktimeProducts||[]).find(function(item){return item.id===review.productId;});if(!product)return;
@@ -4002,7 +3996,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.16.1';
+var WORKBENCH_BUILD='2026.11.16.2';
 /* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;

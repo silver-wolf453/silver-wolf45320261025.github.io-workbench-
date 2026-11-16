@@ -1,6 +1,6 @@
 (function(){
   function boot(){
-  var ECRS_BUILD='2026.11.16.1';
+  var ECRS_BUILD='2026.11.16.2';
   try{performance.mark('ecrs-app-start');}catch(e){}
   var SPEEDS=[0.25,0.5,1,2,3,4];
   var VALUE={value:'增值',necessary:'必要非增值',waste:'浪费'};
