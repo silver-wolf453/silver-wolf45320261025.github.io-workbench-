@@ -4,13 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.16.2">
-<!--
-  第三方组件随本仓库提供，打开工作台不需要 CDN。
-  Univer 1.4.0：vendor/univer-1.4.0.js 与 vendor/univer-1.4.0.css（Apache-2.0，依赖许可保留在文件内）
-  ExcelJS 4.4.0：vendor/exceljs-4.4.0.min.js（MIT）
-  说明见 vendor/NOTICE.txt 与 vendor/licenses/。工序工作簿和 Excel 导入导出时才加载这些文件。
--->
+<meta name="application-version" content="2026.11.16.3">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232456E6'/%3E%3Cpath d='M7 12.5l3.2 3.2L17 9' stroke='white' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -555,7 +549,6 @@ html.theme-live .worktime-review-notice{background:var(--glass);border-color:var
 .product-fields-empty{grid-column:1/-1;padding:18px;color:#788294;font-size:13px;border:1px dashed #dfe4ec;border-radius:10px;text-align:center}
 .product-field-settings{margin:4px 0 16px;border:1px solid #dfe4ec;border-radius:12px;background:#f7f8fb;padding:11px 13px;color:#171a21}
 .product-field-settings>summary{font-size:13px;font-weight:600;cursor:pointer;outline-offset:4px}
-.product-field-designer-note{font-size:12px;color:#788294;margin:9px 0 12px;line-height:1.55}
 .product-field-designer-rows{display:grid;gap:8px}
 .product-field-designer-row{display:grid;grid-template-columns:minmax(120px,1fr) 110px 70px 34px;align-items:end;gap:9px;padding-bottom:8px;border-bottom:1px solid #e5e9f0}
 .product-field-settings label{font-size:12px;color:#535d6e;min-width:0}
@@ -683,7 +676,6 @@ html.theme-live .worktime-review-notice{background:var(--glass);border-color:var
   </div>
 </div>
 
-<!-- Univer 1.4.0 与 ExcelJS 4.4.0 位于 vendor/，打开工序工作簿或导入导出时按相对路径加载。 -->
 <script>
 /* ================= 数据层 ================= */
 /* 清理旧版内置示例；保留墓碑，避免云端合并后重新出现。 */
@@ -1083,7 +1075,7 @@ function productFieldTypeOptions(value){return [['text','文本'],['number','数
 function productFieldsDeleteIcon(){return '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';}
 function renderProductFieldDesigner(product){
   var fields=productActiveFields(product),rows=fields.map(function(field){var key=productFieldsEscape(field.key);return '<div class="product-field-designer-row" data-product-schema-row="'+key+'"><label class="product-field-name"><span>字段名称</span><input type="text" data-product-config-label="'+key+'" value="'+productFieldsEscape(field.label)+'" aria-label="字段名称：'+productFieldsEscape(field.label||'未命名字段')+'"></label><label class="product-field-kind"><span>类型</span><select data-product-config-type="'+key+'" aria-label="字段类型：'+productFieldsEscape(field.label||'未命名字段')+'">'+productFieldTypeOptions(field.type)+'</select></label><label class="product-field-mandatory"><input type="checkbox" data-product-config-required="'+key+'"'+(field.required?' checked':'')+'>必填</label><button type="button" class="btn sm icon-only product-field-remove" data-product-field-action="remove" data-product-field-key="'+key+'" title="删除字段" aria-label="删除字段：'+productFieldsEscape(field.label||'未命名字段')+'">'+productFieldsDeleteIcon()+'</button></div>';}).join('');
-  return '<details class="product-field-settings"><summary>字段设置</summary><p class="product-field-designer-note">字段名称、类型和必填规则仅应用于当前产品，保存后生效。</p><div class="product-field-designer-rows">'+rows+'</div><div class="product-field-add-row"><label><span>新字段名称</span><input type="text" id="productNewFieldLabel" placeholder="例如：客户名称" aria-label="新字段名称"></label><label><span>类型</span><select id="productNewFieldType" aria-label="新字段类型">'+productFieldTypeOptions('text')+'</select></label><label class="product-field-mandatory"><input type="checkbox" id="productNewFieldRequired">必填</label><button type="button" class="btn sm" data-product-field-action="add">＋ 添加字段</button></div><div class="product-field-designer-error" id="productFieldDesignerError" role="alert" hidden></div></details>';
+  return '<details class="product-field-settings"><summary>字段设置</summary><div class="product-field-designer-rows">'+rows+'</div><div class="product-field-add-row"><label><span>新字段名称</span><input type="text" id="productNewFieldLabel" placeholder="例如：客户名称" aria-label="新字段名称"></label><label><span>类型</span><select id="productNewFieldType" aria-label="新字段类型">'+productFieldTypeOptions('text')+'</select></label><label class="product-field-mandatory"><input type="checkbox" id="productNewFieldRequired">必填</label><button type="button" class="btn sm" data-product-field-action="add">＋ 添加字段</button></div><div class="product-field-designer-error" id="productFieldDesignerError" role="alert" hidden></div></details>';
 }
 function readDynamicProductFields(product){
   var container=typeof document!=='undefined'?document.getElementById('productFieldsContainer'):null;
@@ -1789,7 +1781,7 @@ function projStats(p){
 }
 function projStatus(p){
   var s=projStats(p);
-  if(p.persistent) return 'ongoing'; // 持续跟进类项目（如工时测量），不自动判完成
+  if(p.persistent) return 'ongoing';
   if(s.left===0&&s.total>0) return 'done';
   if(p.blocked) return 'blocked';
   var diff=dayDiff(p.deadline,todayStr());
@@ -1811,11 +1803,10 @@ var PRIO_MAP={
   p3:{label:'不重要紧急',cls:'amber'},
   p4:{label:'不重要不紧急',cls:''}
 };
-// 截止日期相同时的优先级顺序（用户指定）：重要紧急 > 不重要紧急 > 重要不紧急 > 不重要不紧急
 var PRIO_ORDER={p1:0,p3:1,p2:2,p4:3,'':4};
 function sortTasks(list){
   return list.slice().sort(function(a,b){
-    if(a.due!==b.due) return a.due<b.due?-1:1; // 截止越近越靠前
+    if(a.due!==b.due) return a.due<b.due?-1:1;
     var pa=PRIO_ORDER[a.prio||'']==null?4:PRIO_ORDER[a.prio||''];
     var pb=PRIO_ORDER[b.prio||'']==null?4:PRIO_ORDER[b.prio||''];
     return pa-pb;
@@ -2035,7 +2026,6 @@ function renderHome(){
   var od=overdueTasks(), dt=dueTodayTasks(), wt=waitingTasks(), dn=doneTodayTasks();
   var inProj=state.projects.filter(function(p){return !p.deleted&&projStatus(p)!=='done';}).length;
 
-  // 最重要3件事：先按截止日期近→前，同日按重要程度（重要紧急>不重要紧急>重要不紧急>不重要不紧急）
   var top=sortTasks(openTasks()).slice(0,3);
 
   var h='<div class="stats home-stats">'+
@@ -2169,7 +2159,7 @@ function renderRisks(){
     '<div class="stat amber"><div class="n">'+amb+'</div><div class="l">琥珀提醒</div></div>'+
     '<div class="stat green"><div class="n">'+(rows.length-red-amb)+'</div><div class="l">绿色正常</div></div>'+
     '<div class="stat"><div class="n">'+rows.length+'</div><div class="l">监控类别</div></div></div>';
-  h+='<div class="card"><div class="card-h"><h3>五类风险自动巡检</h3><span class="muted">每次打开自动刷新</span></div>';
+  h+='<div class="card"><div class="card-h"><h3>五类风险自动巡检</h3></div>';
   rows.forEach(function(r){
     var lab=r.sev==='red'?'<span class="chip red">高风险</span>':(r.sev==='amber'?'<span class="chip amber">需关注</span>':'<span class="chip green">正常</span>');
     h+='<div class="risk sev-'+r.sev+'"><span class="dot"></span><div style="flex:1;min-width:0">'+
@@ -2321,9 +2311,8 @@ function renderData(){
       '<button class="btn primary" onclick="changeLock()">修改密码</button>'+
       '<button class="btn danger" onclick="removeLock()">关闭密码锁</button></div>';
   }else{
-    h+='<div class="field"><label>设置密码（至少4位，本地防身边人查看）</label><input type="password" id="lockNew" placeholder="设置访问密码"></div>'+
-      '<button class="btn primary" onclick="setupLock()">开启密码锁</button>'+
-      '<div class="tip">密码只存在本设备浏览器，忘记后只能清除浏览器数据重置；它不是真正的账号体系。</div>';
+    h+='<div class="field"><label>设置密码（至少4位）</label><input type="password" id="lockNew" placeholder="设置访问密码"></div>'+
+      '<button class="btn primary" onclick="setupLock()">开启密码锁</button>';
   }
   h+='</div>';
 
@@ -2340,8 +2329,7 @@ function renderData(){
     h+='<div class="field"><label>GitHub Token（只需 gist 权限）</label><input type="password" id="syncToken" placeholder="ghp_xxxx"></div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="btn primary" onclick="createGist()">创建同步仓库</button>'+
-      '<button class="btn" onclick="connectGist()">已有仓库，直接连接</button></div>'+
-      '<div class="tip">首次使用：github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → 勾选 gist 权限生成。手机上连接时粘贴同一 Token 和仓库 ID 即可。</div>';
+      '<button class="btn" onclick="connectGist()">已有仓库，直接连接</button></div>';
   }
   h+='</div>';
 
@@ -2387,8 +2375,7 @@ function disconnectSync(){
 
 /* ================= 视图：邮件中心 ================= */
 function renderMail(){
-  var h='<div class="banner info">'+icon('mail',16)+'<span>邮件中心：展示已保存的邮件，可将邮件中的待办导入任务。</span></div>';
-  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">'+
+  var h='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">'+
     '<button class="btn primary sm" onclick="importMail('+String.fromCharCode(39)+'today'+String.fromCharCode(39)+')">导入今日待办</button>'+
     '<button class="btn sm" onclick="importMail('+String.fromCharCode(39)+'week'+String.fromCharCode(39)+')">导入本周待办</button>'+
     '<button class="btn sm" onclick="importMail('+String.fromCharCode(39)+'month'+String.fromCharCode(39)+')">导入本月待办</button></div>';
@@ -2427,8 +2414,7 @@ function renderInfo(){
     {name:'微信',desc:'工作群消息提醒',status:'接口预留'},
     {name:'飞书',desc:'文档 / 会议纪要同步',status:'接口预留'}
   ];
-  var h='<div class="banner info">'+icon('grid',16)+'<span>这里是 OA 办公软件接入位。配置对应企业开放平台凭证后，可把审批、日程、群待办自动拉进工作台；当前为本地演示版，暂不发起真实请求。</span></div>';
-  h+='<div class="grid cols-2">';
+  var h='<div class="grid cols-2">';
   apps.forEach(function(a){
     h+='<div class="card"><div class="proj-top"><div><div class="proj-name">'+a.name+'</div><div class="muted" style="margin-top:2px">'+a.desc+'</div></div>'+
       '<span class="chip amber">'+a.status+'</span></div>'+
@@ -2462,6 +2448,12 @@ window.addEventListener('wheel',function(event){
 window.addEventListener('message',function(event){
   if(event.origin!==location.origin||!event.data||event.data.source!=='wb-ecrs')return;
   if(event.data.type==='stage-scroll'){setEcrsStageScrollLock(!!event.data.lock);return;}
+  if(event.data.type==='stage-wheel'){
+    if(ecrsStagePointer)return;
+    var wheelX=Number(event.data.deltaX)||0,wheelY=Number(event.data.deltaY)||0;
+    if(wheelX||wheelY)window.scrollBy(wheelX,wheelY);
+    return;
+  }
   if(!Array.isArray(state.ecrsProjects))state.ecrsProjects=[];
   if(event.data.type==='save'&&Array.isArray(event.data.projects)){state.ecrsProjects=event.data.projects;save().then(function(){if(typeof toast==='function')toast('ECRS 分析数据已同步到工作台');});}
   if(event.data.type==='video-error'){var detail=operationFaultDetail({name:event.data.errorName||'Error',message:event.data.message,stack:event.data.stack});detail.source='ecrs';detail.eventName='error';if(Number.isInteger(event.data.code))detail.media=event.data.code;logOperation('ecrs_video',detail);return;}
@@ -3996,8 +3988,8 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.16.2';
-/* ================= 本机操作日志：交互、外部请求和故障；不记录密码、令牌或单元格正文 ================= */
+var WORKBENCH_BUILD='2026.11.16.3';
+/* ================= 本机操作日志 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;
 var _operationLogEntries=null,_operationLoggingInstalled=false,_operationSession='',_operationSequence=0;

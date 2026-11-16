@@ -1,6 +1,6 @@
 (function(){
   function boot(){
-  var ECRS_BUILD='2026.11.16.2';
+  var ECRS_BUILD='2026.11.16.3';
   try{performance.mark('ecrs-app-start');}catch(e){}
   var SPEEDS=[0.25,0.5,1,2,3,4];
   var VALUE={value:'增值',necessary:'必要非增值',waste:'浪费'};
@@ -249,7 +249,18 @@
     var btn=document.getElementById('zoomToggle');
     if(btn)btn.setAttribute('aria-pressed',on?'true':'false');
     try{localStorage.setItem('wb_ecrs_magnify',on?'1':'0');}catch(e){}
-    if(!on)resetZoom();else applyZoomTransform();
+    if(!on){resetZoom();postStageScrollLock(false);}
+    else{
+      applyZoomTransform();
+      var stage=stageEl();
+      if(stage&&stage.matches(':hover'))postStageScrollLock(true);
+    }
+  }
+  function wheelPixels(event,stage,axis){
+    var delta=axis==='x'?event.deltaX:event.deltaY;
+    if(event.deltaMode===1)delta*=16;
+    else if(event.deltaMode===2)delta*=(axis==='x'?stage.clientWidth:stage.clientHeight)||400;
+    return delta||0;
   }
   function postStageScrollLock(lock){
     lock=!!lock;
@@ -468,7 +479,7 @@
     });
   };
   document.getElementById('pause').onclick=function(){player.pause();};
-  function step(sign){var amount=Number(document.getElementById('nudge').value)||1/project.fps;player.pause();player.currentTime=Math.max(0,player.currentTime+sign*amount);render();}
+  function step(sign){var amount=1/(project.fps||30);player.pause();player.currentTime=Math.max(0,player.currentTime+sign*amount);render();}
   document.getElementById('back').onclick=function(){step(-1);};
   document.getElementById('forward').onclick=function(){step(1);};
   player.addEventListener('timeupdate',function(){document.getElementById('clock').textContent=fmt(player.currentTime||0);});
@@ -482,17 +493,30 @@
       btn.onclick=function(){setMagnify(!magnifyOn());};
     }
     if(!stage)return;
-    stage.addEventListener('pointerenter',function(){postStageScrollLock(true);});
-    stage.addEventListener('pointermove',function(){postStageScrollLock(true);});
+    stage.addEventListener('pointerenter',function(){if(magnifyOn())postStageScrollLock(true);});
+    stage.addEventListener('pointermove',function(){postStageScrollLock(magnifyOn());});
     stage.addEventListener('pointerleave',function(){if(!zoomDrag)postStageScrollLock(false);});
     window.addEventListener('blur',function(){postStageScrollLock(false);});
     stage.addEventListener('wheel',function(event){
+      if(!magnifyOn()){
+        if(window.parent&&window.parent!==window){
+          var dx=wheelPixels(event,stage,'x'),dy=wheelPixels(event,stage,'y');
+          if(dx||dy){
+            var parentBeforeY=0,parentBeforeX=0,readable=false;
+            try{parentBeforeY=window.parent.scrollY||0;parentBeforeX=window.parent.scrollX||0;readable=true;}catch(e){}
+            requestAnimationFrame(function(){
+              var moved=false;
+              if(readable){try{moved=Math.abs((window.parent.scrollY||0)-parentBeforeY)>0.5||Math.abs((window.parent.scrollX||0)-parentBeforeX)>0.5;}catch(e){}}
+              if(!moved){try{parent.postMessage({source:'wb-ecrs',type:'stage-wheel',deltaX:dx,deltaY:dy},location.origin);}catch(e){}}
+            });
+          }
+        }
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
-      if(!magnifyOn()||!videoReady())return;
-      var delta=event.deltaY;
-      if(event.deltaMode===1)delta*=16;
-      else if(event.deltaMode===2)delta*=stage.clientHeight||400;
+      if(!videoReady())return;
+      var delta=wheelPixels(event,stage,'y');
       if(!delta)return;
       var rect=stage.getBoundingClientRect();
       var x=event.clientX-rect.left,y=event.clientY-rect.top;
@@ -678,6 +702,26 @@
       trace('video',detail);
     });
   });
+  (function installAnalysisToggle(){
+    var btn=document.getElementById('analysisToggle');
+    if(!btn)return;
+    function apply(collapsed){
+      document.documentElement.classList.toggle('ecrs-panel-collapsed',!!collapsed);
+      btn.setAttribute('aria-expanded',collapsed?'false':'true');
+      btn.setAttribute('aria-label',collapsed?'展开':'收起');
+      btn.setAttribute('title',collapsed?'展开':'收起');
+    }
+    var collapsed=false;
+    try{collapsed=localStorage.getItem('wb_ecrs_panel_collapsed')==='1';}catch(e){}
+    apply(collapsed);
+    btn.onclick=function(){
+      var next=!document.documentElement.classList.contains('ecrs-panel-collapsed');
+      apply(next);
+      try{localStorage.setItem('wb_ecrs_panel_collapsed',next?'1':'0');}catch(e){}
+      fitStage();
+      reportLayout();
+    };
+  })();
   function reportLayout(){
     var block=document.querySelector('.ecrs');
     var height=block?Math.ceil(block.offsetTop+block.offsetHeight):Math.ceil(document.body.offsetHeight);
