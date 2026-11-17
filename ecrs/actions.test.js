@@ -19,9 +19,10 @@ assert.notStrictEqual(A.duration(rows[2]),0.5);
 var stats=A.statsFromRows(rows);
 assert.strictEqual(stats.total,398.33);
 assert.strictEqual(stats.buckets.necessary,398.33);
-assert.strictEqual(stats.buckets.value,0);
+assert.strictEqual(stats.buckets.customer,0);
+assert.strictEqual(stats.buckets.business,0);
 assert.strictEqual(stats.buckets.waste,0);
-assert.strictEqual(A.round2(stats.buckets.necessary+stats.buckets.value+stats.buckets.waste),stats.total);
+assert.strictEqual(A.round2(stats.buckets.necessary+stats.buckets.customer+stats.buckets.business+stats.buckets.waste),stats.total);
 
 var chained=A.rowsFromMarks([
   {id:'s2',type:'start',time:0,description:'开始',value:'value'},
@@ -37,9 +38,10 @@ assert.deepStrictEqual(chained.map(function(row){return [row.description,row.sta
 ]);
 var chainedStats=A.statsFromRows(chained);
 assert.strictEqual(chainedStats.total,40);
-assert.strictEqual(chainedStats.buckets.value,10);
+assert.strictEqual(chainedStats.buckets.customer,10);
 assert.strictEqual(chainedStats.buckets.waste,15);
 assert.strictEqual(chainedStats.buckets.necessary,15);
+assert.strictEqual(chainedStats.buckets.business,0);
 
 var only=A.rowsFromMarks([
   {id:'s3',type:'start',time:1.25,description:'开始',value:'value'},
@@ -50,10 +52,54 @@ assert.strictEqual(only[0].start,1.25);
 assert.strictEqual(only[0].end,3);
 assert.strictEqual(A.duration(only[0]),1.75);
 assert.strictEqual(A.statsFromRows(only).total,1.75);
-assert.strictEqual(A.statsFromRows(only).buckets.value,1.75);
+assert.strictEqual(A.statsFromRows(only).buckets.customer,1.75);
 
 assert.strictEqual(A.round2(0.1+0.2),0.3);
 assert.strictEqual(A.duration({start:0.1,end:0.3}),0.2);
+
+assert.strictEqual(A.vsmKey('顾客增值'),'customer');
+assert.strictEqual(A.vsmKey('业务增值'),'business');
+assert.strictEqual(A.vsmKey('必要非增值'),'necessary');
+assert.strictEqual(A.vsmKey('浪费'),'waste');
+assert.strictEqual(A.vsmKey('增值'),'customer');
+assert.strictEqual(A.vsmKey('value'),'customer');
+assert.strictEqual(A.vsmKey('非增值'),'necessary');
+assert.strictEqual(A.vsmKey('必要'),'necessary');
+assert.strictEqual(A.vsmKey('非增值/必要'),'necessary');
+assert.strictEqual(A.vsmKey('waste'),'waste');
+assert.strictEqual(A.vsmKey('其他'),'');
+assert.strictEqual(A.vsmKey(''),'');
+
+var analyzed=A.analyzeRegions([
+  {id:'op1',title:'操作员1动作明细',marks:[
+    {id:'s',type:'start',time:0.77,description:'开始'},
+    {id:'i',type:'insert',time:128.96,description:'吹干'},
+    {id:'e',type:'end',time:399.1,description:'结束'}
+  ]},
+  {id:'eq1',title:'设备1动作明细',marks:[
+    {id:'s2',type:'start',time:2,description:'启动',value:'waste',flow:'操作'},
+    {id:'e2',type:'end',time:5.5,description:'停止',value:'waste',flow:'操作'}
+  ]}
+]);
+assert.strictEqual(analyzed.length,2);
+assert.strictEqual(analyzed[0].title,'操作员1动作明细');
+assert.deepStrictEqual(analyzed[0].rows.map(function(row){return [row.start,row.end,A.duration(row)];}),[
+  [0.77,399.1,398.33],
+  [0.77,128.96,128.19],
+  [128.96,399.1,270.14]
+]);
+assert.strictEqual(analyzed[0].stats.total,398.33);
+assert.strictEqual(analyzed[0].stats.buckets.necessary,398.33);
+assert.strictEqual(analyzed[0].stats.buckets.waste,0);
+assert.strictEqual(analyzed[1].rows.length,1);
+assert.strictEqual(analyzed[1].rows[0].start,2);
+assert.strictEqual(analyzed[1].rows[0].end,5.5);
+assert.strictEqual(A.duration(analyzed[1].rows[0]),3.5);
+assert.strictEqual(analyzed[1].stats.total,3.5);
+assert.strictEqual(analyzed[1].stats.buckets.waste,3.5);
+assert.strictEqual(analyzed[1].stats.flows.operation,3.5);
+assert.strictEqual(analyzed[0].stats.flows.operation,0);
+assert.notStrictEqual(analyzed[0].rows[0].id,analyzed[1].rows[0].id);
 
 console.log('ecrs action timing self-check ok');
 console.log(rows.map(function(row,index){
