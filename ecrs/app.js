@@ -1,17 +1,21 @@
 (function(){
   function boot(){
-  var ECRS_BUILD='2026.11.16.3';
+  var ECRS_BUILD='2026.11.17.1';
   try{performance.mark('ecrs-app-start');}catch(e){}
   var SPEEDS=[0.25,0.5,1,2,3,4];
-  var VALUE={value:'增值',necessary:'必要非增值',waste:'浪费'};
+  var VSM={customer:'顾客增值',business:'业务增值',necessary:'必要非增值',waste:'浪费'};
+  var FLOW=[
+    {id:'operation',label:'操作'},
+    {id:'inspect',label:'检验'},
+    {id:'transport',label:'搬运'},
+    {id:'storage',label:'存储'},
+    {id:'wait',label:'等待'},
+    {id:'op-inspect',label:'操作+检验'}
+  ];
   var ECRS={E:'取消(E)',C:'合并(C)',R:'重排(R)',S:'简化(S)'};
-  var project={id:'ecrs_'+Date.now().toString(36),title:'未命名项目',videoName:'',videoKey:'',fps:30,fields:[
-    {id:'model',label:'产品型号',value:'',required:true},
-    {id:'process',label:'工序',value:'',required:true},
-    {id:'operator',label:'作业员编号',value:'',required:false},
-    {id:'date',label:'拍摄日期',value:'',required:true},
-    {id:'workshop',label:'车间',value:'',required:false}
-  ],actions:[],marks:[]};
+  var TRASH='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var firstRegion=blankRegion('people',1);
+  var project={id:'ecrs_'+Date.now().toString(36),title:'未命名项目',videoName:'',videoKey:'',fps:30,fields:defaultFields(),regions:[firstRegion],activeRegionId:firstRegion.id};
   var archive=[];
   var player=document.getElementById('player');
   var hevcControl=null;
@@ -29,39 +33,120 @@
   function round2(n){return window.EcrsActions?EcrsActions.round2(n):Math.round((Number(n)||0)*100)/100;}
   function duration(action){return window.EcrsActions?EcrsActions.duration(action):(action.end==null||action.start==null?0:Math.max(0,action.end-action.start));}
   function fmt(seconds){return (Number(seconds)||0).toFixed(2)+'s';}
+  function defaultFields(){
+    return [
+      {id:'model',label:'产品型号',type:'text',value:''},
+      {id:'process',label:'工序',type:'text',value:''},
+      {id:'workshop',label:'车间',type:'text',value:''},
+      {id:'people',label:'人员数量',type:'int',value:1},
+      {id:'equipment',label:'设备数量',type:'int',value:0}
+    ];
+  }
+  function blankRegion(role,index){
+    var prefix=role==='equipment'?'设备':'操作员';
+    return {id:uid(),role:role,index:index,title:prefix+index+'动作明细',marks:[],actions:[]};
+  }
+  function fieldById(id){
+    var fields=project.fields||[];
+    for(var i=0;i<fields.length;i++) if(fields[i].id===id) return fields[i];
+    return null;
+  }
+  function parseCount(value){
+    if(typeof value==='number'){
+      if(isFinite(value)&&Math.floor(value)===value&&value>=0) return {ok:true,n:value};
+      return {ok:false};
+    }
+    var text=String(value==null?'':value).trim();
+    if(!/^\d+$/.test(text)) return {ok:false};
+    return {ok:true,n:Number(text)};
+  }
+  function validationIssues(){
+    var issues=[];
+    (project.fields||[]).forEach(function(field){
+      if(field.type==='int'){
+        if(!parseCount(field.value).ok) issues.push({id:field.id,label:field.label,kind:String(field.value==null?'':field.value).trim()?'integer':'empty'});
+      }else if(!String(field.value||'').trim()) issues.push({id:field.id,label:field.label,kind:'empty'});
+    });
+    var people=fieldById('people'),equipment=fieldById('equipment');
+    var peopleCount=people?parseCount(people.value):{ok:false};
+    var equipmentCount=equipment?parseCount(equipment.value):{ok:false};
+    if(peopleCount.ok&&equipmentCount.ok&&peopleCount.n+equipmentCount.n<1){
+      issues.push({id:'people',label:'人员数量',sum:true});
+      issues.push({id:'equipment',label:'设备数量',sum:true});
+    }
+    return issues;
+  }
+  function fieldInvalid(id){return validationIssues().some(function(issue){return issue.id===id;});}
+  function regionHasRows(region){return !!((region.marks&&region.marks.length)||(region.actions&&region.actions.length));}
+  function appliedCount(role){return (project.regions||[]).filter(function(region){return region.role===role;}).length;}
+  function activeRegion(){
+    var regions=project.regions||[],found=null,i=0;
+    for(;i<regions.length;i++) if(regions[i].id===project.activeRegionId) found=regions[i];
+    if(!found) found=regions[0]||null;
+    if(found) project.activeRegionId=found.id;
+    return found;
+  }
+  function activeMarks(){
+    var region=activeRegion();
+    if(!region) return null;
+    if(!Array.isArray(region.marks)) region.marks=[];
+    return region.marks;
+  }
   function refreshActions(){
-    if(!Array.isArray(project.marks)||!window.EcrsActions) return;
-    project.actions=EcrsActions.rowsFromMarks(project.marks);
+    if(!window.EcrsActions) return;
+    (project.regions||[]).forEach(function(region){
+      region.actions=EcrsActions.rowsFromMarks(region.marks||[]);
+    });
   }
   function eachTagged(id,fn){
-    project.actions.forEach(function(action){if(action.id===id) fn(action);});
-    if(Array.isArray(project.marks)) project.marks.forEach(function(mark){if(mark.id===id) fn(mark);});
+    (project.regions||[]).forEach(function(region){
+      (region.actions||[]).forEach(function(action){if(action.id===id) fn(action);});
+      (region.marks||[]).forEach(function(mark){if(mark.id===id) fn(mark);});
+    });
   }
-  function openStartIndex(){
-    if(!Array.isArray(project.marks)) return -1;
+  function openStartIndex(marks){
+    if(!Array.isArray(marks)) return -1;
     var open=-1;
-    for(var i=0;i<project.marks.length;i++){
-      if(project.marks[i].type==='start') open=i;
-      else if(project.marks[i].type==='end') open=-1;
+    for(var i=0;i<marks.length;i++){
+      if(marks[i].type==='start') open=i;
+      else if(marks[i].type==='end') open=-1;
     }
     return open;
   }
   function removeMark(id){
-    if(!Array.isArray(project.marks)){project.actions=project.actions.filter(function(action){return action.id!==id;});return;}
-    var idx=-1;
-    for(var i=0;i<project.marks.length;i++) if(project.marks[i].id===id) idx=i;
-    if(idx<0){project.actions=project.actions.filter(function(action){return action.id!==id;});return;}
-    if(project.marks[idx].type==='start'){
-      var end=idx+1;
-      while(end<project.marks.length&&project.marks[end].type!=='start') end++;
-      project.marks.splice(idx,end-idx);
-    }else project.marks.splice(idx,1);
-    refreshActions();
+    var regions=project.regions||[];
+    for(var r=0;r<regions.length;r++){
+      var marks=regions[r].marks||[],idx=-1;
+      for(var i=0;i<marks.length;i++) if(marks[i].id===id) idx=i;
+      if(idx<0) continue;
+      if(marks[idx].type==='start'){
+        var end=idx+1;
+        while(end<marks.length&&marks[end].type!=='start') end++;
+        marks.splice(idx,end-idx);
+      }else marks.splice(idx,1);
+      refreshActions();
+      return;
+    }
   }
   function clearWorkingAnalysis(){
-    project.marks=[];
-    project.actions=[];
+    (project.regions||[]).forEach(function(region){region.marks=[];region.actions=[];});
     render();
+  }
+  function flowSvg(id){
+    var body={
+      operation:'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+      inspect:'<rect x="2.75" y="2.75" width="10.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+      transport:'<path d="M2.75 8h9.2M8.8 4.6 12.9 8 8.8 11.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+      storage:'<path d="M2.75 2.75h4.25a5.25 5.25 0 0 1 0 10.5H2.75z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+      wait:'<path d="M2.75 3.4h10.5L8 13.15z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+      'op-inspect':'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5.4" y="5.4" width="5.2" height="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+    }[id]||'';
+    if(!body) return '';
+    return '<svg class="flow-symbol" viewBox="0 0 16 16" aria-hidden="true">'+body+'</svg>';
+  }
+  function flowById(id){
+    for(var i=0;i<FLOW.length;i++) if(FLOW[i].id===id) return FLOW[i];
+    return null;
   }
   function markTime(){
     var t=player.currentTime||0;
@@ -91,79 +176,241 @@
   }
 
   function renderFields(){
-    document.getElementById('fields').innerHTML=project.fields.map(function(field){
-      return '<label class="muted">'+escapeHtml(field.label)+'</label><div class="field"><input data-field="'+field.id+'" type="text" value="'+escapeHtml(field.value)+'" aria-label="'+escapeHtml(field.label)+'"><label><input data-required="'+field.id+'" type="checkbox"'+(field.required?' checked':'')+'>必填</label><button class="icon" data-remove="'+field.id+'" type="button" title="删除字段" aria-label="删除字段">🗑</button></div>';
+    document.getElementById('fields').innerHTML=(project.fields||[]).map(function(field){
+      var invalid=fieldInvalid(field.id);
+      var input=field.type==='int'
+        ?'<input id="ecrs-field-'+field.id+'" data-field="'+field.id+'" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" value="'+escapeHtml(field.value)+'" aria-label="'+escapeHtml(field.label)+'" aria-invalid="'+(invalid?'true':'false')+'">'
+        :'<input id="ecrs-field-'+field.id+'" data-field="'+field.id+'" type="text" value="'+escapeHtml(field.value)+'" aria-label="'+escapeHtml(field.label)+'" aria-invalid="'+(invalid?'true':'false')+'">';
+      return '<div class="field"><label class="field-label" for="ecrs-field-'+field.id+'">'+escapeHtml(field.label)+'</label>'+input+'</div>';
     }).join('');
   }
   function escapeHtml(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function renderTable(){
-    var rows=project.actions.map(function(action,index){
-      return '<tr><td>'+(index+1)+'</td><td><input data-desc="'+action.id+'" value="'+escapeHtml(action.description)+'"></td><td>'+fmt(action.start)+'</td><td>'+(action.end==null?'—':fmt(action.end))+'</td><td>'+fmt(duration(action))+'</td><td><select data-value="'+action.id+'">'+options(VALUE,action.value)+'</select></td><td><select data-ecrs="'+action.id+'">'+options(ECRS,action.ecrs)+'</select></td><td><input data-direction="'+action.id+'" value="'+escapeHtml(action.direction)+'"></td><td><button class="icon" data-del="'+action.id+'" type="button" aria-label="删除动作">🗑</button></td></tr>';
-    }).join('');
-    document.getElementById('table').innerHTML='<table><thead><tr><th>#</th><th>动作描述</th><th>开始</th><th>结束</th><th>时长</th><th>分类</th><th>ECRS</th><th>改善方向</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  function options(map,selected,allowBlank){
+    var html=allowBlank?'<option value=""'+(selected===''?' selected':'')+'></option>':'';
+    return html+Object.keys(map).map(function(key){return '<option value="'+key+'"'+(key===selected?' selected':'')+'>'+map[key]+'</option>';}).join('');
   }
-  function options(map,selected){return Object.keys(map).map(function(key){return '<option value="'+key+'"'+(key===selected?' selected':'')+'>'+map[key]+'</option>';}).join('');}
+  function flowControl(action){
+    var current=flowById(action.flow);
+    var label=current?current.label:'—';
+    var menu=FLOW.map(function(item){
+      var selected=item.id===action.flow;
+      return '<li role="option" tabindex="-1" data-flow-value="'+item.id+'" data-flow-for="'+escapeHtml(action.id)+'" aria-selected="'+(selected?'true':'false')+'">'+flowSvg(item.id)+'<span>'+item.label+'</span></li>';
+    }).join('');
+    var id=escapeHtml(action.id);
+    return '<div class="flow"><button type="button" class="flow-btn" data-flow-btn="'+id+'" aria-haspopup="listbox" aria-expanded="false" aria-controls="flow-menu-'+id+'" aria-label="流程'+(current?'：'+current.label:'')+'">'+(current?flowSvg(current.id):'')+'<span>'+label+'</span></button><ul class="flow-menu" id="flow-menu-'+id+'" role="listbox" aria-label="流程" hidden>'+menu+'</ul></div>';
+  }
+  function renderRegions(){
+    var host=document.getElementById('regions');
+    var active=activeRegion();
+    host.innerHTML=(project.regions||[]).map(function(region){
+      var rows=(region.actions||[]).map(function(action,index){
+        var id=escapeHtml(action.id);
+        return '<tr><td>'+(index+1)+'</td><td><input data-desc="'+id+'" value="'+escapeHtml(action.description)+'" aria-label="动作描述"></td><td>'+fmt(action.start)+'</td><td>'+(action.end==null?'—':fmt(action.end))+'</td><td>'+fmt(duration(action))+'</td><td>'+flowControl(action)+'</td><td><select data-vsm="'+id+'" aria-label="VSM">'+options(VSM,action.value,true)+'</select></td><td><select data-ecrs="'+id+'" aria-label="ECRS">'+options(ECRS,action.ecrs)+'</select></td><td><input data-direction="'+id+'" value="'+escapeHtml(action.direction)+'" aria-label="改善方向"></td><td><button class="icon" data-del="'+id+'" type="button" aria-label="删除动作">'+TRASH+'</button></td></tr>';
+      }).join('');
+      var on=active&&region.id===active.id;
+      return '<section class="region'+(on?' is-active':'')+'" data-region="'+escapeHtml(region.id)+'"><h2 class="region-head"><button type="button" class="region-select" aria-pressed="'+(on?'true':'false')+'">'+escapeHtml(region.title)+'</button></h2><div class="region-body"><table><thead><tr><th>#</th><th>动作描述</th><th>开始</th><th>结束</th><th>时长</th><th>流程</th><th>VSM</th><th>ECRS</th><th>改善方向</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+    }).join('');
+  }
   function renderTimeline(){
     var host=document.getElementById('timeline');host.innerHTML='';
+    var region=activeRegion();
     var total=Math.max(player.duration||0,1);
-    project.actions.forEach(function(action){
+    ((region&&region.actions)||[]).forEach(function(action){
       if(action.start==null)return;
       var end=action.end==null?Math.min(total,action.start+0.4):action.end;
       var mark=document.createElement('div');
-      mark.className='mark '+(action.value||'value');
+      mark.className='mark'+(action.value?' '+action.value:'');
       mark.style.left=(action.start/total*100)+'%';
       mark.style.width=Math.max(0.4,(end-action.start)/total*100)+'%';
       mark.title=action.description||'动作';
       host.appendChild(mark);
     });
   }
+  function combinedStats(){
+    var buckets={customer:0,business:0,necessary:0,waste:0};
+    var flows={operation:0,inspect:0,transport:0,storage:0,wait:0,'op-inspect':0};
+    var total=0,count=0;
+    (project.regions||[]).forEach(function(region){
+      var summary=window.EcrsActions?EcrsActions.statsFromRows(region.actions||[]):{total:0,buckets:{},flows:{}};
+      total+=summary.total||0;
+      count+=(region.actions||[]).length;
+      Object.keys(buckets).forEach(function(key){buckets[key]+=summary.buckets&&summary.buckets[key]||0;});
+      Object.keys(flows).forEach(function(key){flows[key]+=summary.flows&&summary.flows[key]||0;});
+    });
+    Object.keys(buckets).forEach(function(key){buckets[key]=round2(buckets[key]);});
+    Object.keys(flows).forEach(function(key){flows[key]=round2(flows[key]);});
+    return {total:round2(total),buckets:buckets,flows:flows,count:count};
+  }
   function renderStats(){
-    var summary=window.EcrsActions?EcrsActions.statsFromRows(project.actions):{total:0,buckets:{value:0,necessary:0,waste:0}};
+    var summary=combinedStats();
     var total=summary.total;
-    var buckets=summary.buckets;
-    document.getElementById('stats').innerHTML=['value','necessary','waste'].map(function(key){
-      var share=total?Math.round(buckets[key]/total*1000)/10:0;
-      return '<div class="stat"><span>'+VALUE[key]+'</span><b>'+fmt(buckets[key])+'</b><span>'+share+'%</span></div>';
-    }).join('')+'<div class="stat"><span>总 CT</span><b>'+fmt(total)+'</b><span>'+project.actions.length+' 个动作</span></div>';
+    document.getElementById('stats').innerHTML=['customer','business','necessary','waste'].map(function(key){
+      var share=total?Math.round(summary.buckets[key]/total*1000)/10:0;
+      return '<div class="stat"><span>'+VSM[key]+'</span><b>'+fmt(summary.buckets[key])+'</b><span>'+share+'%</span></div>';
+    }).join('')+'<div class="stat"><span>总 CT</span><b>'+fmt(total)+'</b><span>'+summary.count+' 个动作</span></div>';
   }
   function renderArchive(){
     document.getElementById('archive').innerHTML=archive.map(function(item){
       return '<div class="row"><button class="btn" data-open="'+item.id+'" type="button">'+escapeHtml(item.title||'项目')+'</button><span class="muted">'+(item.savedAt||'')+'</span></div>';
     }).join('')||'<p class="muted">本机还没有存档。</p>';
   }
-  function render(){renderFields();renderTable();renderTimeline();renderStats();renderArchive();document.getElementById('clock').textContent=fmt(player.currentTime||0);}
+  function render(){renderFields();renderRegions();renderTimeline();renderStats();renderArchive();document.getElementById('clock').textContent=fmt(player.currentTime||0);reportLayout();}
+  function paintFieldValidity(){
+    var root=document.getElementById('fields');
+    if(!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('[data-field]'),function(input){
+      input.setAttribute('aria-invalid',fieldInvalid(input.getAttribute('data-field'))?'true':'false');
+    });
+  }
+  function reshapeRegions(peopleN,equipmentN,ask){
+    var removed=[];
+    function shape(role,count,prefix){
+      var have=(project.regions||[]).filter(function(region){return region.role===role;});
+      removed=removed.concat(have.slice(count));
+      var out=[],i=0;
+      for(;i<count;i++){
+        var region=have[i]||{id:uid(),role:role,marks:[],actions:[]};
+        region.role=role;
+        region.index=i+1;
+        region.title=prefix+(i+1)+'动作明细';
+        if(!Array.isArray(region.marks)) region.marks=[];
+        out.push(region);
+      }
+      return out;
+    }
+    var people=shape('people',peopleN,'操作员');
+    var equipment=shape('equipment',equipmentN,'设备');
+    var doomed=removed.filter(regionHasRows);
+    if(ask&&doomed.length){
+      var names=doomed.map(function(region){return region.title;}).join('、');
+      if(!window.confirm('将删除'+names+'，继续？')) return false;
+    }
+    project.regions=people.concat(equipment);
+    if(!project.regions.some(function(region){return region.id===project.activeRegionId;})) project.activeRegionId=project.regions.length?project.regions[0].id:'';
+    refreshActions();
+    renderRegions();
+    renderTimeline();
+    renderStats();
+    reportLayout();
+    return true;
+  }
+  function setActiveRegion(id){
+    if(!id||id===project.activeRegionId) return;
+    var regions=project.regions||[],found=false,i=0;
+    for(;i<regions.length;i++) if(regions[i].id===id) found=true;
+    if(!found) return;
+    project.activeRegionId=id;
+    var root=document.getElementById('regions');
+    Array.prototype.forEach.call(root.querySelectorAll('.region'),function(node){
+      var on=node.getAttribute('data-region')===id;
+      node.classList.toggle('is-active',on);
+      var button=node.querySelector('.region-select');
+      if(button) button.setAttribute('aria-pressed',on?'true':'false');
+    });
+    renderTimeline();
+  }
+  function closeFlowMenus(){
+    document.querySelectorAll('.flow-menu').forEach(function(menu){
+      menu.hidden=true;
+      var btn=menu.parentNode&&menu.parentNode.querySelector('.flow-btn');
+      if(btn) btn.setAttribute('aria-expanded','false');
+    });
+  }
+  function openFlow(btn){
+    closeFlowMenus();
+    var menu=document.getElementById(btn.getAttribute('aria-controls'));
+    if(!menu) return;
+    menu.hidden=false;
+    btn.setAttribute('aria-expanded','true');
+    var selected=menu.querySelector('[aria-selected="true"]')||menu.querySelector('[role="option"]');
+    if(selected) selected.focus();
+  }
+  function chooseFlow(actionId,value){
+    eachTagged(actionId,function(action){action.flow=value;});
+    renderRegions();
+    renderStats();
+  }
 
   document.getElementById('fields').addEventListener('input',function(event){
-    var id=event.target.getAttribute('data-field');if(!id)return;
-    project.fields.forEach(function(field){if(field.id===id)field.value=event.target.value;});
+    var input=event.target;
+    var id=input.getAttribute('data-field');
+    if(!id) return;
+    var field=fieldById(id);
+    if(!field) return;
+    if(field.type==='int'){
+      var parsed=parseCount(input.value);
+      if(!parsed.ok){field.value=input.value;paintFieldValidity();return;}
+      field.value=parsed.n;
+      var otherId=id==='people'?'equipment':'people';
+      var other=parseCount(fieldById(otherId).value);
+      if(other.ok){
+        var peopleN=id==='people'?parsed.n:other.n;
+        var equipmentN=id==='equipment'?parsed.n:other.n;
+        if(peopleN!==appliedCount('people')||equipmentN!==appliedCount('equipment')){
+          if(!reshapeRegions(peopleN,equipmentN,true)){
+            var back=appliedCount(id==='people'?'people':'equipment');
+            field.value=back;
+            input.value=String(back);
+          }
+        }
+      }
+      paintFieldValidity();
+      return;
+    }
+    field.value=input.value;
+    input.setAttribute('aria-invalid',String(field.value||'').trim()?'false':'true');
   });
-  document.getElementById('fields').addEventListener('change',function(event){
-    var id=event.target.getAttribute('data-required');if(!id)return;
-    project.fields.forEach(function(field){if(field.id===id)field.required=event.target.checked;});
-  });
-  document.getElementById('fields').addEventListener('click',function(event){
-    var id=event.target.getAttribute('data-remove');if(!id)return;
-    project.fields=project.fields.filter(function(field){return field.id!==id;});renderFields();
-  });
-  document.getElementById('addField').onclick=function(){
-    var label=document.getElementById('newField').value.trim();if(!label)return;
-    project.fields.push({id:uid(),label:label,value:'',required:false});
-    document.getElementById('newField').value='';renderFields();
-  };
-  document.getElementById('table').addEventListener('input',function(event){
+  document.getElementById('regions').addEventListener('input',function(event){
     var id=event.target.getAttribute('data-desc')||event.target.getAttribute('data-direction');
-    if(!id)return;
+    if(!id) return;
     eachTagged(id,function(action){if(event.target.hasAttribute('data-desc'))action.description=event.target.value;else action.direction=event.target.value;});
   });
-  document.getElementById('table').addEventListener('change',function(event){
-    var valueId=event.target.getAttribute('data-value'),ecrsId=event.target.getAttribute('data-ecrs');
-    if(valueId) eachTagged(valueId,function(action){action.value=event.target.value;});
+  document.getElementById('regions').addEventListener('change',function(event){
+    var vsmId=event.target.getAttribute('data-vsm'),ecrsId=event.target.getAttribute('data-ecrs');
+    if(vsmId) eachTagged(vsmId,function(action){action.value=event.target.value;});
     if(ecrsId) eachTagged(ecrsId,function(action){action.ecrs=event.target.value;});
-    renderTimeline();renderStats();
+    if(vsmId||ecrsId){renderTimeline();renderStats();}
   });
-  document.getElementById('table').addEventListener('click',function(event){
-    var id=event.target.getAttribute('data-del');if(!id)return;
-    removeMark(id);render();
+  document.getElementById('regions').addEventListener('click',function(event){
+    var option=event.target.closest('[data-flow-value]');
+    if(option){
+      event.preventDefault();
+      chooseFlow(option.getAttribute('data-flow-for'),option.getAttribute('data-flow-value'));
+      return;
+    }
+    var flowBtn=event.target.closest('.flow-btn');
+    if(flowBtn){
+      if(flowBtn.getAttribute('aria-expanded')==='true') closeFlowMenus();
+      else openFlow(flowBtn);
+    }
+    var del=event.target.closest('[data-del]');
+    if(del){removeMark(del.getAttribute('data-del'));render();return;}
+    var section=event.target.closest('.region');
+    if(section) setActiveRegion(section.getAttribute('data-region'));
+  });
+  document.getElementById('regions').addEventListener('keydown',function(event){
+    var btn=event.target.closest('.flow-btn');
+    var option=event.target.closest('[role="option"]');
+    if(btn&&(event.key==='ArrowDown'||event.key==='Enter'||event.key===' ')){event.preventDefault();openFlow(btn);return;}
+    if(btn&&event.key==='Escape'){closeFlowMenus();return;}
+    if(!option) return;
+    var items=Array.prototype.slice.call(option.parentNode.querySelectorAll('[role="option"]'));
+    var index=items.indexOf(option);
+    if(event.key==='ArrowDown'){event.preventDefault();items[Math.min(items.length-1,index+1)].focus();}
+    else if(event.key==='ArrowUp'){event.preventDefault();items[Math.max(0,index-1)].focus();}
+    else if(event.key==='Home'){event.preventDefault();items[0].focus();}
+    else if(event.key==='End'){event.preventDefault();items[items.length-1].focus();}
+    else if(event.key==='Enter'||event.key===' '){event.preventDefault();chooseFlow(option.getAttribute('data-flow-for'),option.getAttribute('data-flow-value'));}
+    else if(event.key==='Escape'){
+      event.preventDefault();
+      var owner=document.querySelector('.flow-btn[data-flow-btn="'+option.getAttribute('data-flow-for')+'"]');
+      closeFlowMenus();
+      if(owner) owner.focus();
+    }
+  });
+  document.addEventListener('click',function(event){
+    if(event.target.closest&&event.target.closest('.flow')) return;
+    closeFlowMenus();
   });
 
   function mimeFor(name,fallback){
@@ -572,36 +819,141 @@
     stage.addEventListener('dragstart',function(event){event.preventDefault();});
   })();
 
-  function blankMark(type,time){return {id:uid(),type:type,time:time,description:'',value:'necessary',ecrs:'R',direction:''};}
+  function blankMark(type,time){return {id:uid(),type:type,time:time,description:'',value:'necessary',ecrs:'R',direction:'',flow:''};}
   document.getElementById('markStart').onclick=function(){
-    if(openStartIndex()>=0){alert('已有未结束的周期');return;}
-    if(!Array.isArray(project.marks)) project.marks=[];
-    project.marks.push(blankMark('start',markTime()));
+    var marks=activeMarks();
+    if(!marks){alert('没有动作明细');return;}
+    if(openStartIndex(marks)>=0){alert('已有未结束的周期');return;}
+    marks.push(blankMark('start',markTime()));
     refreshActions();render();
   };
   document.getElementById('markEnd').onclick=function(){
-    var open=openStartIndex();
+    var marks=activeMarks();
+    if(!marks){alert('没有动作明细');return;}
+    var open=openStartIndex(marks);
     if(open<0){alert('没有未结束的动作');return;}
     var time=markTime();
-    if(time<project.marks[open].time) time=project.marks[open].time;
-    project.marks.push(blankMark('end',time));
+    if(time<marks[open].time) time=marks[open].time;
+    marks.push(blankMark('end',time));
     refreshActions();render();
   };
   document.getElementById('markOther').onclick=function(){
-    var open=openStartIndex();
+    var marks=activeMarks();
+    if(!marks){alert('没有动作明细');return;}
+    var open=openStartIndex(marks);
     if(open<0){alert('请先标记开始');return;}
-    var time=markTime(),prev=project.marks[open].time;
-    for(var i=open+1;i<project.marks.length;i++){
-      if(project.marks[i].type==='insert') prev=Math.max(prev,project.marks[i].time);
+    var time=markTime(),prev=marks[open].time;
+    for(var i=open+1;i<marks.length;i++){
+      if(marks[i].type==='insert') prev=Math.max(prev,marks[i].time);
     }
     if(time<prev){alert('请在上一个标记之后插入');return;}
-    project.marks.push(blankMark('insert',time));
+    marks.push(blankMark('insert',time));
     refreshActions();render();
   };
 
-  function missingRequired(){return project.fields.filter(function(field){return field.required&&!String(field.value||'').trim();}).map(function(field){return field.label;});}
+  function normalizeMark(mark){
+    if(!mark||typeof mark!=='object') return null;
+    var next={id:mark.id||uid(),type:mark.type,time:mark.time,description:mark.description||'',ecrs:mark.ecrs||'R',direction:mark.direction||''};
+    if(mark.value==null) next.value='necessary';
+    else next.value=window.EcrsActions?EcrsActions.vsmKey(mark.value):String(mark.value);
+    next.flow=window.EcrsActions?EcrsActions.flowKey(mark.flow):'';
+    return next;
+  }
+  function fitRole(role,count,prefix,source){
+    var have=source.filter(function(region){return region.role===role;});
+    var n=count;
+    if(have.length>n) n=have.length;
+    var out=[],i=0;
+    for(;i<n;i++){
+      var region=have[i]||{id:uid(),role:role,marks:[],actions:[]};
+      region.role=role;
+      region.index=i+1;
+      region.title=prefix+(i+1)+'动作明细';
+      if(!Array.isArray(region.marks)) region.marks=[];
+      region.actions=[];
+      out.push(region);
+    }
+    return {regions:out,count:n};
+  }
+  function normalizeProject(raw){
+    raw=raw&&typeof raw==='object'?raw:{};
+    var incoming=Array.isArray(raw.fields)?raw.fields:[];
+    function findValue(ids,labels){
+      for(var i=0;i<incoming.length;i++){
+        var field=incoming[i];
+        if(!field||typeof field!=='object') continue;
+        if(ids.indexOf(field.id)>=0) return field.value;
+        if(labels.indexOf(String(field.label||'').trim())>=0) return field.value;
+      }
+      return undefined;
+    }
+    function textOf(ids,labels){
+      var value=findValue(ids,labels);
+      return value==null?'':String(value);
+    }
+    function countOf(ids,labels,fallback){
+      var value=findValue(ids,labels);
+      if(value==null||value==='') return fallback;
+      var parsed=parseCount(value);
+      return parsed.ok?parsed.n:String(value);
+    }
+    var fields=[
+      {id:'model',label:'产品型号',type:'text',value:textOf(['model'],['产品型号'])},
+      {id:'process',label:'工序',type:'text',value:textOf(['process'],['工序'])},
+      {id:'workshop',label:'车间',type:'text',value:textOf(['workshop'],['车间'])},
+      {id:'people',label:'人员数量',type:'int',value:countOf(['people'],['人员数量'],1)},
+      {id:'equipment',label:'设备数量',type:'int',value:countOf(['equipment'],['设备数量'],0)}
+    ];
+    var regions=[];
+    if(Array.isArray(raw.regions)){
+      raw.regions.forEach(function(region){
+        if(!region||typeof region!=='object') return;
+        var title=String(region.title||'');
+        var role=region.role==='equipment'||region.role==='people'?region.role:(title.indexOf('设备')===0?'equipment':'people');
+        var marks=[];
+        (Array.isArray(region.marks)?region.marks:[]).forEach(function(mark){var next=normalizeMark(mark);if(next) marks.push(next);});
+        regions.push({id:region.id||uid(),role:role,index:0,title:title,marks:marks,actions:[]});
+      });
+    }else{
+      var legacy=[];
+      (Array.isArray(raw.marks)?raw.marks:[]).forEach(function(mark){var next=normalizeMark(mark);if(next) legacy.push(next);});
+      regions.push({id:uid(),role:'people',index:1,title:'操作员1动作明细',marks:legacy,actions:[]});
+    }
+    var peopleParsed=parseCount(fields[3].value);
+    var equipmentParsed=parseCount(fields[4].value);
+    var peopleFit=fitRole('people',peopleParsed.ok?peopleParsed.n:regions.filter(function(region){return region.role==='people';}).length,'操作员',regions);
+    var equipmentFit=fitRole('equipment',equipmentParsed.ok?equipmentParsed.n:regions.filter(function(region){return region.role==='equipment';}).length,'设备',regions);
+    if(peopleParsed.ok) fields[3].value=peopleFit.count;
+    if(equipmentParsed.ok) fields[4].value=equipmentFit.count;
+    var fitted=peopleFit.regions.concat(equipmentFit.regions);
+    var active=raw.activeRegionId;
+    if(!fitted.some(function(region){return region.id===active;})) active=fitted.length?fitted[0].id:'';
+    return {id:raw.id||uid(),title:raw.title||'未命名项目',videoName:raw.videoName||'',videoKey:raw.videoKey||'',fps:Number(raw.fps)||30,fields:fields,regions:fitted,activeRegionId:active};
+  }
+  function adoptProject(raw){
+    project=normalizeProject(raw);
+    refreshActions();
+    render();
+  }
+  function guardArchive(){
+    paintFieldValidity();
+    var issues=validationIssues();
+    if(!issues.length) return true;
+    var labels=[],integers=[],sum=false;
+    issues.forEach(function(issue){
+      if(issue.sum) sum=true;
+      else if(issue.kind==='integer'){if(integers.indexOf(issue.label)<0) integers.push(issue.label);}
+      else if(labels.indexOf(issue.label)<0) labels.push(issue.label);
+    });
+    var parts=[];
+    if(labels.length) parts.push('请填写必填字段：'+labels.join('、'));
+    if(integers.length) parts.push(integers.join('、')+'须为不小于 0 的整数');
+    if(sum) parts.push('人员数量与设备数量合计至少为 1');
+    alert(parts.join('\n'));
+    return false;
+  }
   function rememberLocal(){
-    var missing=missingRequired();if(missing.length){alert('请填写必填字段：'+missing.join('、'));return false;}
+    if(!guardArchive()) return false;
     var saved=payload();saved.savedAt=new Date().toISOString();saved.videoKey=project.videoKey;
     archive=archive.filter(function(item){return item.id!==project.id;});archive.unshift(saved);
     localStorage.setItem('wb_ecrs_archive',JSON.stringify(archive));
@@ -614,46 +966,62 @@
     parent.postMessage({source:'wb-ecrs',type:'save',projects:projects},location.origin);
   };
   document.getElementById('exportJson').onclick=function(){
+    if(!guardArchive()) return;
     var blob=new Blob([JSON.stringify(payload(),null,2)],{type:'application/json'});
-    var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=(project.fields[0].value||'ecrs')+'.json';link.click();
+    var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=(fieldById('model').value||'ecrs')+'.json';link.click();
   };
   document.getElementById('importJson').onclick=function(){document.getElementById('jsonFile').click();};
   document.getElementById('jsonFile').onchange=function(){
     var file=this.files&&this.files[0];if(!file)return;
-    file.text().then(function(text){project=JSON.parse(text);project.actions=project.actions||[];project.fields=project.fields||[];if(!project.id)project.id=uid();if(Array.isArray(project.marks))refreshActions();render();});
+    var input=this;
+    file.text().then(function(text){adoptProject(JSON.parse(text));}).catch(function(){alert('无法读取 JSON');}).then(function(){input.value='';});
   };
   document.getElementById('archive').addEventListener('click',function(event){
     var id=event.target.getAttribute('data-open');if(!id)return;
     var item=archive.filter(function(entry){return entry.id===id;})[0];if(!item)return;
-    project=clone(item);if(Array.isArray(project.marks))refreshActions();render();
+    adoptProject(item);
     if(item.videoKey)loadVideo(item.videoKey).then(function(blob){if(blob)return showVideo(blob,item.videoName||project.videoName);}).catch(function(error){reportVideo(error);alert(error.message||'无法恢复本机视频，请重新导入');});
   });
 
   document.getElementById('exportExcel').onclick=function(){
-    var missing=missingRequired();if(missing.length){alert('请填写必填字段：'+missing.join('、'));return;}
+    if(!guardArchive()) return;
     var script=document.createElement('script');
     script.src='../vendor/exceljs-4.4.0.min.js?v=f4f230487d2d';
     script.onload=function(){exportWorkbook();};
     if(window.ExcelJS)exportWorkbook();else document.head.appendChild(script);
   };
+  function flowLabel(id){var item=flowById(id);return item?item.label:'';}
   function exportWorkbook(){
     var workbook=new ExcelJS.Workbook();
     var details=workbook.addWorksheet('动作明细');
-    details.addRow(['序号','动作描述','开始(秒)','结束(秒)','时长(秒)','分类','ECRS','改善方向']);
-    project.actions.forEach(function(action,index){details.addRow([index+1,action.description,action.start,action.end,duration(action),VALUE[action.value]||'',ECRS[action.ecrs]||'',action.direction]);});
+    details.addRow(['序号','区域','动作描述','开始(秒)','结束(秒)','时长(秒)','流程','VSM','ECRS','改善方向']);
+    var index=0;
+    (project.regions||[]).forEach(function(region){
+      (region.actions||[]).forEach(function(action){
+        index+=1;
+        details.addRow([index,region.title,action.description,action.start,action.end,duration(action),flowLabel(action.flow),VSM[action.value]||'',ECRS[action.ecrs]||'',action.direction]);
+      });
+    });
     var stats=workbook.addWorksheet('时间统计');
-    var summary=window.EcrsActions?EcrsActions.statsFromRows(project.actions):{total:0,buckets:{value:0,necessary:0,waste:0}};
+    var summary=combinedStats();
     var total=summary.total;
     stats.addRow(['项目字段','值']);project.fields.forEach(function(field){stats.addRow([field.label,field.value]);});
-    stats.addRow([]);stats.addRow(['分类','时长(秒)','占比']);
-    ['value','necessary','waste'].forEach(function(key){
+    stats.addRow([]);stats.addRow(['VSM','时长(秒)','占比']);
+    ['customer','business','necessary','waste'].forEach(function(key){
       var amount=summary.buckets[key]||0;
-      stats.addRow([VALUE[key],amount,total?amount/total:0]);
+      stats.addRow([VSM[key],amount,total?amount/total:0]);
     });
     stats.addRow(['总 CT',total,1]);
+    stats.addRow([]);stats.addRow(['流程','时长(秒)','占比']);
+    FLOW.forEach(function(item){
+      var amount=summary.flows[item.id]||0;
+      stats.addRow([item.label,amount,total?amount/total:0]);
+    });
     var records=workbook.addWorksheet('ECRS改善记录');
-    records.addRow(['动作','现状分类','ECRS','改善方向','时长(秒)']);
-    project.actions.forEach(function(action){records.addRow([action.description,VALUE[action.value]||'',ECRS[action.ecrs]||'',action.direction,duration(action)]);});
+    records.addRow(['区域','动作','VSM','流程','ECRS','改善方向','时长(秒)']);
+    (project.regions||[]).forEach(function(region){
+      (region.actions||[]).forEach(function(action){records.addRow([region.title,action.description,VSM[action.value]||'',flowLabel(action.flow),ECRS[action.ecrs]||'',action.direction,duration(action)]);});
+    });
     workbook.xlsx.writeBuffer().then(function(buffer){
       var blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='ECRS动作分析.xlsx';link.click();

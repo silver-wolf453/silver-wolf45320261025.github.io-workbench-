@@ -10,13 +10,35 @@
     if(!action||action.end==null||action.start==null) return 0;
     return round2(Math.max(0,Number(action.end)-Number(action.start)));
   }
+  function vsmKey(value){
+    var raw=value==null?'':String(value).trim();
+    if(raw==='customer'||raw==='顾客增值') return 'customer';
+    if(raw==='business'||raw==='业务增值') return 'business';
+    if(raw==='necessary'||raw==='必要非增值') return 'necessary';
+    if(raw==='waste'||raw==='浪费') return 'waste';
+    if(raw==='value'||raw==='增值') return 'customer';
+    if(raw==='非增值'||raw==='必要'||raw==='非增值/必要') return 'necessary';
+    return '';
+  }
+  function flowKey(value){
+    var raw=value==null?'':String(value).trim();
+    var map={
+      operation:'operation',inspect:'inspect',transport:'transport',storage:'storage',wait:'wait','op-inspect':'op-inspect',
+      '操作':'operation','检验':'inspect','搬运':'transport','存储':'storage','等待':'wait','操作+检验':'op-inspect'
+    };
+    return map[raw]||'';
+  }
   function copyFields(mark){
+    var value=mark.value;
+    if(value==null) value='necessary';
+    else value=vsmKey(value);
     return {
       id:mark.id,
       description:mark.description||'',
-      value:mark.value||'necessary',
+      value:value,
       ecrs:mark.ecrs||'R',
-      direction:mark.direction||''
+      direction:mark.direction||'',
+      flow:flowKey(mark.flow)
     };
   }
   function rowsFromMarks(marks){
@@ -61,14 +83,24 @@
     }
     return rows;
   }
+  function emptyBuckets(){return {customer:0,business:0,necessary:0,waste:0};}
+  function emptyFlows(){return {operation:0,inspect:0,transport:0,storage:0,wait:0,'op-inspect':0};}
+  function addKnown(target,key,amount){
+    if(!Object.prototype.hasOwnProperty.call(target,key)) return;
+    target[key]+=amount;
+  }
   function statsFromRows(rows){
-    var buckets={value:0,necessary:0,waste:0},total=0,list=Array.isArray(rows)?rows:[],i=0;
+    var buckets=emptyBuckets(),flows=emptyFlows(),total=0,list=Array.isArray(rows)?rows:[],i=0;
+    function take(item){
+      var amount=duration(item);
+      total+=amount;
+      addKnown(buckets,vsmKey(item.value),amount);
+      addKnown(flows,flowKey(item.flow),amount);
+    }
     while(i<list.length){
       var row=list[i];
       if(row.kind!=='cycle'){
-        var plain=duration(row);
-        total+=plain;
-        buckets[row.value]=(buckets[row.value]||0)+plain;
+        take(row);
         i++;
         continue;
       }
@@ -78,23 +110,28 @@
         details.push(list[i]);
         i++;
       }
-      var counted=details.length?details:[row];
-      counted.forEach(function(item){
-        var amount=duration(item);
-        total+=amount;
-        buckets[item.value]=(buckets[item.value]||0)+amount;
-      });
+      (details.length?details:[row]).forEach(take);
     }
-    return {
-      total:round2(total),
-      buckets:{
-        value:round2(buckets.value||0),
-        necessary:round2(buckets.necessary||0),
-        waste:round2(buckets.waste||0)
-      }
-    };
+    Object.keys(buckets).forEach(function(key){buckets[key]=round2(buckets[key]);});
+    Object.keys(flows).forEach(function(key){flows[key]=round2(flows[key]);});
+    return {total:round2(total),buckets:buckets,flows:flows};
   }
-  var api={round2:round2,duration:duration,rowsFromMarks:rowsFromMarks,statsFromRows:statsFromRows};
+  function analyzeRegions(regions){
+    var list=Array.isArray(regions)?regions:[];
+    return list.map(function(region){
+      var rows=rowsFromMarks(region&&region.marks);
+      return {id:region&&region.id,title:region&&region.title,rows:rows,stats:statsFromRows(rows)};
+    });
+  }
+  var api={
+    round2:round2,
+    duration:duration,
+    rowsFromMarks:rowsFromMarks,
+    statsFromRows:statsFromRows,
+    analyzeRegions:analyzeRegions,
+    vsmKey:vsmKey,
+    flowKey:flowKey
+  };
   root.EcrsActions=api;
   if(typeof module!=='undefined'&&module.exports) module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

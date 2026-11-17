@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ECRS 视频动作分析</title>
 <script>if(window.parent!==window)document.documentElement.classList.add('embedded');try{if(localStorage.getItem('wb_ecrs_panel_collapsed')==='1')document.documentElement.classList.add('ecrs-panel-collapsed');}catch(e){}</script>
-<link rel="stylesheet" href="app.css?v=2026.11.16.3">
+<link rel="stylesheet" href="app.css?v=2026.11.17.1">
 </head>
 <body>
 <svg class="icon-set" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="0" height="0">
@@ -42,8 +42,7 @@
     <div id="analysisBody">
       <input id="videoFile" type="file" accept="video/mp4,video/webm,video/ogg,video/*">
       <h2>项目资料</h2>
-      <div id="fields"></div>
-      <div class="row"><input id="newField" type="text" placeholder="新字段名称"><button class="btn" id="addField" type="button">添加字段</button></div>
+      <div id="fields" class="fields"></div>
       <h2>项目存档</h2>
       <div class="row">
         <button class="btn primary" id="saveLocal" type="button">保存到本机</button>
@@ -89,14 +88,13 @@
       <button class="btn icon-only" id="markOther" type="button" title="插入重叠动作" aria-label="插入重叠动作"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-insert"/></svg></button>
       <button class="btn primary" id="exportExcel" type="button">导出 Excel</button>
     </div>
-    <h2>动作明细</h2>
-    <div id="table"></div>
+    <div id="regions" class="regions"></div>
     <h2>时间统计</h2>
     <div class="stats" id="stats"></div>
   </section>
 </div>
 <script>performance.mark('ecrs-shell');</script>
-<script src="actions.js?v=2026.11.16.3" defer></script>
-<script src="app.js?v=2026.11.16.3" defer></script>
+<script src="actions.js?v=2026.11.17.1" defer></script>
+<script src="app.js?v=2026.11.17.1" defer></script>
 </body>
 </html>
