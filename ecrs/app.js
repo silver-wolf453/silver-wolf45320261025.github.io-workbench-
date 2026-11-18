@@ -1,6 +1,6 @@
 (function(){
   function boot(){
-  var ECRS_BUILD='2026.11.17.1';
+  var ECRS_BUILD='2026.11.18.1';
   try{performance.mark('ecrs-app-start');}catch(e){}
   var SPEEDS=[0.25,0.5,1,2,3,4];
   var VSM={customer:'顾客增值',business:'业务增值',necessary:'必要非增值',waste:'浪费'};
@@ -42,9 +42,11 @@
       {id:'equipment',label:'设备数量',type:'int',value:0}
     ];
   }
+  function regionHeading(role,index){
+    return window.EcrsActions?EcrsActions.regionHeading(role,index):(role==='equipment'?'设备':'操作员')+index;
+  }
   function blankRegion(role,index){
-    var prefix=role==='equipment'?'设备':'操作员';
-    return {id:uid(),role:role,index:index,title:prefix+index+'动作明细',marks:[],actions:[]};
+    return {id:uid(),role:role,index:index,title:regionHeading(role,index),marks:[],actions:[]};
   }
   function fieldById(id){
     var fields=project.fields||[];
@@ -86,11 +88,10 @@
     if(found) project.activeRegionId=found.id;
     return found;
   }
-  function activeMarks(){
-    var region=activeRegion();
-    if(!region) return null;
-    if(!Array.isArray(region.marks)) region.marks=[];
-    return region.marks;
+  function regionById(id){
+    var regions=project.regions||[];
+    for(var i=0;i<regions.length;i++) if(regions[i].id===id) return regions[i];
+    return null;
   }
   function refreshActions(){
     if(!window.EcrsActions) return;
@@ -103,15 +104,6 @@
       (region.actions||[]).forEach(function(action){if(action.id===id) fn(action);});
       (region.marks||[]).forEach(function(mark){if(mark.id===id) fn(mark);});
     });
-  }
-  function openStartIndex(marks){
-    if(!Array.isArray(marks)) return -1;
-    var open=-1;
-    for(var i=0;i<marks.length;i++){
-      if(marks[i].type==='start') open=i;
-      else if(marks[i].type==='end') open=-1;
-    }
-    return open;
   }
   function removeMark(id){
     var regions=project.regions||[];
@@ -133,16 +125,19 @@
     render();
   }
   function flowSvg(id){
-    var body={
-      operation:'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-      inspect:'<rect x="2.75" y="2.75" width="10.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-      transport:'<path d="M2.75 8h9.2M8.8 4.6 12.9 8 8.8 11.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-      storage:'<path d="M2.75 2.75h4.25a5.25 5.25 0 0 1 0 10.5H2.75z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-      wait:'<path d="M2.75 3.4h10.5L8 13.15z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-      'op-inspect':'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5.4" y="5.4" width="5.2" height="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/>'
-    }[id]||'';
-    if(!body) return '';
-    return '<svg class="flow-symbol" viewBox="0 0 16 16" aria-hidden="true">'+body+'</svg>';
+    return window.EcrsActions?EcrsActions.flowSymbol(id):'';
+  }
+  var MARK_ICON={
+    start:'<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-start"/></svg>',
+    end:'<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-end"/></svg>',
+    insert:'<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-insert"/></svg>'
+  };
+  function regionTools(regionId){
+    var id=escapeHtml(regionId);
+    function button(kind,label){
+      return '<button class="btn icon-only" type="button" data-mark="'+kind+'" data-region-id="'+id+'" title="'+label+'" aria-label="'+label+'">'+MARK_ICON[kind]+'</button>';
+    }
+    return '<span class="region-tools">'+button('start','标记开始')+button('end','标记结束')+button('insert','插入重叠动作')+'</span>';
   }
   function flowById(id){
     for(var i=0;i<FLOW.length;i++) if(FLOW[i].id===id) return FLOW[i];
@@ -208,7 +203,8 @@
         return '<tr><td>'+(index+1)+'</td><td><input data-desc="'+id+'" value="'+escapeHtml(action.description)+'" aria-label="动作描述"></td><td>'+fmt(action.start)+'</td><td>'+(action.end==null?'—':fmt(action.end))+'</td><td>'+fmt(duration(action))+'</td><td>'+flowControl(action)+'</td><td><select data-vsm="'+id+'" aria-label="VSM">'+options(VSM,action.value,true)+'</select></td><td><select data-ecrs="'+id+'" aria-label="ECRS">'+options(ECRS,action.ecrs)+'</select></td><td><input data-direction="'+id+'" value="'+escapeHtml(action.direction)+'" aria-label="改善方向"></td><td><button class="icon" data-del="'+id+'" type="button" aria-label="删除动作">'+TRASH+'</button></td></tr>';
       }).join('');
       var on=active&&region.id===active.id;
-      return '<section class="region'+(on?' is-active':'')+'" data-region="'+escapeHtml(region.id)+'"><h2 class="region-head"><button type="button" class="region-select" aria-pressed="'+(on?'true':'false')+'">'+escapeHtml(region.title)+'</button></h2><div class="region-body"><table><thead><tr><th>#</th><th>动作描述</th><th>开始</th><th>结束</th><th>时长</th><th>流程</th><th>VSM</th><th>ECRS</th><th>改善方向</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+      var heading=escapeHtml(regionHeading(region.role, region.index));
+      return '<section class="region'+(on?' is-active':'')+'" data-region="'+escapeHtml(region.id)+'"><div class="region-head"><h2><button type="button" class="region-select" aria-pressed="'+(on?'true':'false')+'">'+heading+'</button></h2>'+regionTools(region.id)+'</div><div class="region-body"><table><thead><tr><th>#</th><th>动作描述</th><th>开始</th><th>结束</th><th>时长</th><th>流程</th><th>VSM</th><th>ECRS</th><th>改善方向</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
     }).join('');
   }
   function renderTimeline(){
@@ -264,7 +260,7 @@
   }
   function reshapeRegions(peopleN,equipmentN,ask){
     var removed=[];
-    function shape(role,count,prefix){
+    function shape(role,count){
       var have=(project.regions||[]).filter(function(region){return region.role===role;});
       removed=removed.concat(have.slice(count));
       var out=[],i=0;
@@ -272,14 +268,14 @@
         var region=have[i]||{id:uid(),role:role,marks:[],actions:[]};
         region.role=role;
         region.index=i+1;
-        region.title=prefix+(i+1)+'动作明细';
+        region.title=regionHeading(role,i+1);
         if(!Array.isArray(region.marks)) region.marks=[];
         out.push(region);
       }
       return out;
     }
-    var people=shape('people',peopleN,'操作员');
-    var equipment=shape('equipment',equipmentN,'设备');
+    var people=shape('people',peopleN);
+    var equipment=shape('equipment',equipmentN);
     var doomed=removed.filter(regionHasRows);
     if(ask&&doomed.length){
       var names=doomed.map(function(region){return region.title;}).join('、');
@@ -372,6 +368,14 @@
     if(vsmId||ecrsId){renderTimeline();renderStats();}
   });
   document.getElementById('regions').addEventListener('click',function(event){
+    var markBtn=event.target.closest('[data-mark]');
+    if(markBtn){
+      event.preventDefault();
+      event.stopPropagation();
+      closeFlowMenus();
+      markRegion(markBtn.getAttribute('data-region-id'), markBtn.getAttribute('data-mark'));
+      return;
+    }
     var option=event.target.closest('[data-flow-value]');
     if(option){
       event.preventDefault();
@@ -820,36 +824,37 @@
   })();
 
   function blankMark(type,time){return {id:uid(),type:type,time:time,description:'',value:'necessary',ecrs:'R',direction:'',flow:''};}
-  document.getElementById('markStart').onclick=function(){
-    var marks=activeMarks();
-    if(!marks){alert('没有动作明细');return;}
-    if(openStartIndex(marks)>=0){alert('已有未结束的周期');return;}
-    marks.push(blankMark('start',markTime()));
-    refreshActions();render();
-  };
-  document.getElementById('markEnd').onclick=function(){
-    var marks=activeMarks();
-    if(!marks){alert('没有动作明细');return;}
-    var open=openStartIndex(marks);
-    if(open<0){alert('没有未结束的动作');return;}
-    var time=markTime();
-    if(time<marks[open].time) time=marks[open].time;
-    marks.push(blankMark('end',time));
-    refreshActions();render();
-  };
-  document.getElementById('markOther').onclick=function(){
-    var marks=activeMarks();
-    if(!marks){alert('没有动作明细');return;}
-    var open=openStartIndex(marks);
-    if(open<0){alert('请先标记开始');return;}
-    var time=markTime(),prev=marks[open].time;
-    for(var i=open+1;i<marks.length;i++){
-      if(marks[i].type==='insert') prev=Math.max(prev,marks[i].time);
+  function markAlert(code){
+    if(code==='open') return '已有未结束的周期';
+    if(code==='none') return '没有未结束的动作';
+    if(code==='need-start') return '请先标记开始';
+    if(code==='order') return '请在上一个标记之后插入';
+    return '没有动作明细';
+  }
+  var markBusy=false;
+  function markRegion(id,kind){
+    if(markBusy) return;
+    markBusy=true;
+    try{
+      var region=regionById(id);
+      if(!region||!window.EcrsActions){alert('没有动作明细');return;}
+      if(!Array.isArray(region.marks)) region.marks=[];
+      var result=EcrsActions.applyRegionMark(region.marks, kind, markTime(), function(decision){
+        return blankMark(decision.type, decision.time);
+      });
+      var switched=project.activeRegionId!==region.id;
+      if(!result.ok){
+        if(switched){project.activeRegionId=region.id;render();}
+        alert(markAlert(result.code));
+        return;
+      }
+      project.activeRegionId=region.id;
+      refreshActions();
+      render();
+    }finally{
+      markBusy=false;
     }
-    if(time<prev){alert('请在上一个标记之后插入');return;}
-    marks.push(blankMark('insert',time));
-    refreshActions();render();
-  };
+  }
 
   function normalizeMark(mark){
     if(!mark||typeof mark!=='object') return null;
@@ -859,7 +864,7 @@
     next.flow=window.EcrsActions?EcrsActions.flowKey(mark.flow):'';
     return next;
   }
-  function fitRole(role,count,prefix,source){
+  function fitRole(role,count,source){
     var have=source.filter(function(region){return region.role===role;});
     var n=count;
     if(have.length>n) n=have.length;
@@ -868,7 +873,7 @@
       var region=have[i]||{id:uid(),role:role,marks:[],actions:[]};
       region.role=role;
       region.index=i+1;
-      region.title=prefix+(i+1)+'动作明细';
+      region.title=regionHeading(role,i+1);
       if(!Array.isArray(region.marks)) region.marks=[];
       region.actions=[];
       out.push(region);
@@ -917,12 +922,12 @@
     }else{
       var legacy=[];
       (Array.isArray(raw.marks)?raw.marks:[]).forEach(function(mark){var next=normalizeMark(mark);if(next) legacy.push(next);});
-      regions.push({id:uid(),role:'people',index:1,title:'操作员1动作明细',marks:legacy,actions:[]});
+      regions.push({id:uid(),role:'people',index:1,title:regionHeading('people',1),marks:legacy,actions:[]});
     }
     var peopleParsed=parseCount(fields[3].value);
     var equipmentParsed=parseCount(fields[4].value);
-    var peopleFit=fitRole('people',peopleParsed.ok?peopleParsed.n:regions.filter(function(region){return region.role==='people';}).length,'操作员',regions);
-    var equipmentFit=fitRole('equipment',equipmentParsed.ok?equipmentParsed.n:regions.filter(function(region){return region.role==='equipment';}).length,'设备',regions);
+    var peopleFit=fitRole('people',peopleParsed.ok?peopleParsed.n:regions.filter(function(region){return region.role==='people';}).length,regions);
+    var equipmentFit=fitRole('equipment',equipmentParsed.ok?equipmentParsed.n:regions.filter(function(region){return region.role==='equipment';}).length,regions);
     if(peopleParsed.ok) fields[3].value=peopleFit.count;
     if(equipmentParsed.ok) fields[4].value=equipmentFit.count;
     var fitted=peopleFit.regions.concat(equipmentFit.regions);
