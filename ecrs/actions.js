@@ -116,6 +116,68 @@
     Object.keys(flows).forEach(function(key){flows[key]=round2(flows[key]);});
     return {total:round2(total),buckets:buckets,flows:flows};
   }
+  function regionHeading(role, index){
+    return (role==='equipment'?'设备':'操作员')+index;
+  }
+  function flowSymbol(id){
+    var body={
+      operation:'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+      inspect:'<rect x="2.75" y="2.75" width="10.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+      transport:'<path d="M2.75 8h9.2M8.8 4.6 12.9 8 8.8 11.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+      storage:'<path d="M2.75 3.4h10.5L8 13.15z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+      wait:'<path d="M2.75 2.75h4.25a5.25 5.25 0 0 1 0 10.5H2.75z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+      'op-inspect':'<circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5.4" y="5.4" width="5.2" height="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+    }[flowKey(id)]||'';
+    if(!body) return '';
+    return '<svg class="flow-symbol" viewBox="0 0 16 16" aria-hidden="true">'+body+'</svg>';
+  }
+  function openStartIndex(marks){
+    if(!Array.isArray(marks)) return -1;
+    var open=-1;
+    for(var i=0;i<marks.length;i++){
+      if(marks[i].type==='start') open=i;
+      else if(marks[i].type==='end') open=-1;
+    }
+    return open;
+  }
+  function prepareRegionMark(marks, kind, time){
+    if(!Array.isArray(marks)) return {ok:false, code:'missing'};
+    var t=Number(time);
+    if(!isFinite(t)) t=0;
+    if(t<0) t=0;
+    if(kind==='start'){
+      if(openStartIndex(marks)>=0) return {ok:false, code:'open'};
+      return {ok:true, type:'start', time:t};
+    }
+    if(kind==='end'){
+      var open=openStartIndex(marks);
+      if(open<0) return {ok:false, code:'none'};
+      var startTime=Number(marks[open].time);
+      if(!isFinite(startTime)) startTime=0;
+      if(t<startTime) t=startTime;
+      return {ok:true, type:'end', time:t};
+    }
+    if(kind==='insert'){
+      var at=openStartIndex(marks);
+      if(at<0) return {ok:false, code:'need-start'};
+      var prev=Number(marks[at].time);
+      if(!isFinite(prev)) prev=0;
+      for(var i=at+1;i<marks.length;i++){
+        if(marks[i].type!=='insert') continue;
+        var markAt=Number(marks[i].time);
+        if(isFinite(markAt)) prev=Math.max(prev, markAt);
+      }
+      if(t<prev) return {ok:false, code:'order'};
+      return {ok:true, type:'insert', time:t};
+    }
+    return {ok:false, code:'missing'};
+  }
+  function applyRegionMark(marks, kind, time, create){
+    var decision=prepareRegionMark(marks, kind, time);
+    if(!decision.ok) return decision;
+    marks.push(typeof create==='function'?create(decision):{type:decision.type,time:decision.time});
+    return {ok:true, type:decision.type, time:decision.time};
+  }
   function analyzeRegions(regions){
     var list=Array.isArray(regions)?regions:[];
     return list.map(function(region){
@@ -130,7 +192,12 @@
     statsFromRows:statsFromRows,
     analyzeRegions:analyzeRegions,
     vsmKey:vsmKey,
-    flowKey:flowKey
+    flowKey:flowKey,
+    flowSymbol:flowSymbol,
+    regionHeading:regionHeading,
+    openStartIndex:openStartIndex,
+    prepareRegionMark:prepareRegionMark,
+    applyRegionMark:applyRegionMark
   };
   root.EcrsActions=api;
   if(typeof module!=='undefined'&&module.exports) module.exports=api;
