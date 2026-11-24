@@ -208,13 +208,13 @@ assert.strictEqual(app.indexOf("+'动作明细'"),-1);
 assert.strictEqual((app.match(/动作明细/g)||[]).length,3);
 var rootHtml=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 var manual=fs.readFileSync(path.join(__dirname,'..','manual'),'utf8');
-assert.ok(rootHtml.indexOf('content="2026.11.18.1"')>=0);
-assert.ok(rootHtml.indexOf("WORKBENCH_BUILD='2026.11.18.1'")>=0);
+assert.ok(rootHtml.indexOf('content="2026.11.24.1"')>=0);
+assert.ok(rootHtml.indexOf("WORKBENCH_BUILD='2026.11.24.1'")>=0);
 assert.ok(page.indexOf('app.css?v=2026.11.18.1')>=0);
 assert.ok(page.indexOf('actions.js?v=2026.11.18.1')>=0);
 assert.ok(page.indexOf('app.js?v=2026.11.18.1')>=0);
 assert.ok(app.indexOf("ECRS_BUILD='2026.11.18.1'")>=0);
-assert.ok(manual.indexOf('当前为 2026.11.18.1。')>=0);
+assert.ok(manual.indexOf('当前为 2026.11.24.1。')>=0);
 assert.ok(manual.indexOf('符号依次是圆、方、箭头、倒三角、D，以及圆内套方。')>=0);
 assert.ok(manual.indexOf('### 2026.11.18.1')>=0);
 
