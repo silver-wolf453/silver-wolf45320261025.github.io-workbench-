@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>业务工作台</title>
-<meta name="application-version" content="2026.11.18.1">
+<meta name="application-version" content="2026.11.24.1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232456E6'/%3E%3Cpath d='M7 12.5l3.2 3.2L17 9' stroke='white' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -676,6 +676,7 @@ html.theme-live .worktime-review-notice{background:var(--glass);border-color:var
   </div>
 </div>
 
+<script src="workbook-import.js?v=2026.11.24.1"></script>
 <script>
 /* ================= 数据层 ================= */
 /* 清理旧版内置示例；保留墓碑，避免云端合并后重新出现。 */
@@ -1684,13 +1685,22 @@ function fitChange(){
 /* ---------- 云端同步（GitHub Gist） ---------- */
 function getSync(){try{return JSON.parse(localStorage.getItem('wb_sync')||'{}');}catch(e){return {};}}
 function setSync(o){localStorage.setItem('wb_sync',JSON.stringify(o));}
+function readGistFile(file){
+  if(!file)return Promise.resolve(null);
+  if(!file.truncated&&typeof file.content==='string')return Promise.resolve(file.content);
+  if(typeof file.raw_url!=='string'||!file.raw_url)return Promise.reject(new Error('云端文件超过接口直接返回的大小，且没有原始地址'));
+  var raw;try{raw=new URL(file.raw_url);}catch(error){return Promise.reject(new Error('云端原始地址无效'));}
+  if(raw.protocol!=='https:'||['gist.githubusercontent.com','raw.githubusercontent.com'].indexOf(raw.hostname)<0)return Promise.reject(new Error('无法读取完整云端文件'));
+  // 密钥 gist 的原始地址无需令牌即可读取。带上 Authorization 会触发跨域预检，gist.githubusercontent.com 拒绝后浏览器只给出 TypeError: Failed to fetch。
+  return fetch(raw.href).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.text();});
+}
 function pushCloud(){
   var syn=getSync(); if(!syn.gistId||!syn.token)return Promise.resolve();
   return pullCloud()
-    .then(function(remote){mergeRemote(remote);})            // 先并入云端独有数据
-    .then(function(){
-      var content;try{content=JSON.stringify(state);}catch(error){var failed=new TypeError('同步数据无法序列化：'+(error&&error.message?error.message:'循环引用'));if(error&&error.stack)failed.stack=error.stack;throw failed;}
-      var body=JSON.stringify({files:{'workbench.json':{content:content}}});
+    .then(function(remote){mergeRemote(remote);})
+    .then(function(){return buildCloudFiles();})
+    .then(function(files){
+      var body=JSON.stringify({files:files});
       return fetch('https://api.github.com/gists/'+syn.gistId,{method:'PATCH',headers:{'Authorization':'token '+syn.token,'Content-Type':'application/json','Accept':'application/vnd.github+json'},body:body});
     })
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);})
@@ -1701,13 +1711,13 @@ function pullCloud(){
   return fetch('https://api.github.com/gists/'+syn.gistId,{headers:{'Authorization':'token '+syn.token,'Accept':'application/vnd.github+json'}})
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(g){
-      var file=g&&g.files&&g.files['workbench.json'];if(!file)return null;
-      if(!file.truncated&&typeof file.content==='string')return JSON.parse(file.content);
-      if(typeof file.raw_url!=='string'||!file.raw_url)throw new Error('云端文件超过接口直接返回的大小，且没有原始地址');
-      var raw;try{raw=new URL(file.raw_url);}catch(error){throw new Error('云端原始地址无效');}
-      if(raw.protocol!=='https:'||['gist.githubusercontent.com','raw.githubusercontent.com'].indexOf(raw.hostname)<0)throw new Error('无法读取完整云端文件');
-      // 密钥 gist 的原始地址无需令牌即可读取。带上 Authorization 会触发跨域预检，gist.githubusercontent.com 拒绝后浏览器只给出 TypeError: Failed to fetch。
-      return fetch(raw.href).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();});
+      var files=g&&g.files||{};
+      return Promise.all([readGistFile(files['workbench.json']),readGistFile(files['operation-log.json'])]).then(function(parts){
+        if(typeof parts[0]!=='string'||!parts[0])return null;
+        var data=JSON.parse(parts[0]);
+        if(typeof parts[1]==='string'&&parts[1]){try{var log=JSON.parse(parts[1]);if(log&&Array.isArray(log.events))data.operationLogs=log.events;}catch(ignore){}}
+        return data;
+      });
     });
 }
 // 按 id 逐条合并：updatedAt 较新的一方为准；软删除墓碑随同步传播，旧数据不得复活已删项
@@ -1721,6 +1731,7 @@ function mergeById(localList, remoteList){
   return Object.keys(map).map(function(k){return map[k];});
 }
 function mergeRemote(remote){
+  if(remote&&Array.isArray(remote.operationLogs))applyMergedOperationLogs(remote.operationLogs);
   if(!remote||!Array.isArray(remote.tasks))return 0;
   remote=migrate(remote);
   if(!remote||!remote.worktimeSettings||!state||!state.worktimeSettings||!Array.isArray(state.worktimeProducts))return 0;
@@ -3461,12 +3472,7 @@ function wbExcelValidationFromUniver(rule){
   validation.formulae=[];[rule.formula1,rule.formula2].forEach(function(value){if(value==null||value==='')return;var text=String(value);if(validation.type==='list'&&!text.startsWith('=')&&!/^".*"$/.test(text))text='"'+text+'"';validation.formulae.push(/^-?(?:\d+\.?\d*|\.\d+)$/.test(text)?Number(text):text);});return validation;
 }
 function wbExcelColor(color,palette){
-  if(!color)return null;if(typeof color==='string')return {rgb:color};
-  var hex=color.argb?String(color.argb).slice(-6):color.theme!=null?(palette||[])[color.theme]:null;
-  if(!hex&&color.indexed!=null)hex=({0:'000000',1:'FFFFFF',2:'FF0000',3:'00FF00',4:'0000FF',5:'FFFF00',6:'FF00FF',7:'00FFFF',64:'000000'})[color.indexed];
-  if(!hex)return null;hex=hex.replace('#','');
-  if(color.tint){var tint=Number(color.tint);hex=[0,2,4].map(function(offset){var n=parseInt(hex.slice(offset,offset+2),16);return Math.round(tint<0?n*(1+tint):n+(255-n)*tint).toString(16).padStart(2,'0');}).join('');}
-  return {rgb:'#'+hex.toUpperCase()};
+  return WorkbookImport.excelColor(color,palette);
 }
 function wbExcelThemePalette(workbook){
   var result=['FFFFFF','000000','E7E6E6','44546A','4472C4','ED7D31','A5A5A5','FFC000','5B9BD5','70AD47','0563C1','954F72'];
@@ -3483,7 +3489,7 @@ function wbExcelStyleToUniver(style,palette){
   var color=wbExcelColor(font.color,palette);if(color)output.cl=color;
   if(style.numFmt)output.n={pattern:style.numFmt};
   if(style.fill&&style.fill.type==='pattern'&&style.fill.pattern==='solid'){color=wbExcelColor(style.fill.fgColor,palette);if(color)output.bg=color;}
-  var border=style.border||{},bd={};[['top','t'],['bottom','b'],['left','l'],['right','r']].forEach(function(pair){var edge=border[pair[0]];if(edge&&edge.style)bd[pair[1]]={s:Math.max(0,WB_EXCEL_BORDER_NAMES.indexOf(edge.style)),cl:wbExcelColor(edge.color,palette)||{rgb:'#000000'}};});if(Object.keys(bd).length)output.bd=bd;
+  var border=style.border||{},bd={};[['top','t'],['bottom','b'],['left','l'],['right','r']].forEach(function(pair){var side=WorkbookImport.borderSide(border[pair[0]],palette);if(side)bd[pair[1]]=side;});if(Object.keys(bd).length)output.bd=bd;
   if(alignment.horizontal)output.ht=({left:1,center:2,centerContinuous:2,right:3,justify:4,distributed:6})[alignment.horizontal]||0;
   if(alignment.vertical)output.vt=({top:1,middle:2,bottom:3,justify:2,distributed:2})[alignment.vertical]||0;
   if(alignment.wrapText!=null)output.tb=alignment.wrapText?3:1;
@@ -3562,6 +3568,7 @@ async function exceljsImportWorkbook(arrayBuffer){
       var info={};if(row.height!=null)info.h=row.height*4/3;if(row.hidden)info.hd=1;if(row.style&&Object.keys(row.style).length)info.s=wbExcelStyleToUniver(row.style,palette);if(Object.keys(info).length)sheet.rowData[index-1]=info;
       row.eachCell({includeEmpty:true},function(cell,column){if(cell.isMerged&&cell.master.address!==cell.address)return;if(cell.value==null&&(!cell.style||!Object.keys(cell.style).length)&&!cell.note&&!Object.keys(cell.dataValidation||{}).length)return;if(!sheet.cellData[index-1])sheet.cellData[index-1]={};sheet.cellData[index-1][column-1]=wbExcelCellToUniver(cell,palette,date1904);});
     });
+    WorkbookImport.applyMergeBorders(worksheet, sheet, palette);
     (worksheet.columns||[]).forEach(function(column,index){var info={};if(column.width!=null)info.w=column.width*7+5;if(column.hidden)info.hd=1;if(column.style&&Object.keys(column.style).length)info.s=wbExcelStyleToUniver(column.style,palette);if(Object.keys(info).length)sheet.columnData[index]=info;});
     var filterRange=typeof worksheet.autoFilter==='string'?wbExcelRange(worksheet.autoFilter):worksheet.autoFilter&&worksheet.autoFilter.from&&worksheet.autoFilter.to?{startRow:worksheet.autoFilter.from.row-1,startColumn:worksheet.autoFilter.from.column-1,endRow:worksheet.autoFilter.to.row-1,endColumn:worksheet.autoFilter.to.column-1}:null;if(filterRange)filters[id]={ref:filterRange,filterColumns:[]};
     var rules=[];Object.keys(worksheet.dataValidations.model||{}).forEach(function(address,index){var rule=wbExcelValidationToUniver(worksheet.dataValidations.model[address],address,'xlsx_validation_'+worksheet.id+'_'+index,date1904);if(rule)rules.push(rule);});if(rules.length)validations[id]=rules;
@@ -3571,7 +3578,15 @@ async function exceljsImportWorkbook(arrayBuffer){
   var definedNames={};(workbook.definedNames.model||[]).forEach(function(item,index){if(item.name&&item.ranges&&item.ranges.length)definedNames['xlsx_name_'+index]={id:'xlsx_name_'+index,name:item.name,formulaOrRefString:item.ranges.join(','),localSheetId:'AllDefaultWorkbook'};});snapshot.resources=[];[['SHEET_DEFINED_NAME_PLUGIN',definedNames],['SHEET_FILTER_PLUGIN',filters],['SHEET_DATA_VALIDATION_PLUGIN',validations]].forEach(function(pair){if(Object.keys(pair[1]).length)snapshot.resources.push({name:pair[0],data:JSON.stringify(pair[1])});});
   if(snapshot.sheetOrder.every(function(id){return snapshot.sheets[id].hidden;}))snapshot.sheets[snapshot.sheetOrder[0]].hidden=0;
   sidecar.originalSignature=wbExcelSignature(wbExcelCoreSnapshot(snapshot));sidecar.productBaseline=wbExcelSignature(snapshot.workbenchProductMetadata||null);snapshot.workbenchExcel=sidecar;
-  try{await ensureSheetTools();if(typeof wbExcelReadImages==='function')snapshot.workbenchImages=wbExcelReadImages(workbook,snapshot);}catch(ignore){}
+  try{
+    await ensureSheetTools();
+    snapshot.workbenchImages=typeof wbExcelReadImages==='function'?wbExcelReadImages(workbook,snapshot):[];
+    for(var imageIndex=0;imageIndex<snapshot.workbenchImages.length;imageIndex++){
+      var picture=snapshot.workbenchImages[imageIndex];
+      if(picture&&picture.dataUrl)picture.dataUrl=await shrinkImageDataUrl(picture.dataUrl, 160000);
+    }
+    snapshot.workbenchImages=snapshot.workbenchImages.filter(function(picture){return picture&&WorkbookImport.validDataUrl(picture.dataUrl);});
+  }catch(ignore){snapshot.workbenchImages=[];}
   return snapshot;
 }
 async function exceljsExportWorkbook(snapshot,product){
@@ -3988,7 +4003,7 @@ async function exportWorktimeProduct(id){
   }catch(error){toast('Excel 导出失败，请重试');}
 }
 
-var WORKBENCH_BUILD='2026.11.18.1';
+var WORKBENCH_BUILD='2026.11.24.1';
 /* ================= 本机操作日志 ================= */
 var OPERATION_LOG_KEY='wb_operation_log_v1';
 var OPERATION_LOG_LIMIT=8000;
@@ -4013,7 +4028,7 @@ function safeOperationErrorName(error){
   return ['Error','TypeError','SyntaxError','RangeError','ReferenceError','URIError','EvalError','AbortError','NetworkError','QuotaExceededError','SecurityError','InvalidStateError','NotAllowedError','NotSupportedError'].indexOf(name)>=0?name:'Error';
 }
 function operationFaultText(value,max){
-  return String(value==null?'':value).replace(/ghp_[A-Za-z0-9_]+/g,'[redacted]').replace(/github_pat_[A-Za-z0-9_]+/g,'[redacted]').replace(/sk-[A-Za-z0-9_-]{8,}/g,'[redacted]').replace(/Bearer\s+\S+/gi,'Bearer [redacted]').replace(/((?:token|access_token|api[_-]?key|apikey|authorization|password)=)[^&\s]+/gi,'$1[redacted]').replace(/(token\s+)\S+/gi,'$1[redacted]').replace(/\s+/g,' ').trim().slice(0,max||180);
+  return WorkbookImport.redactSecrets(value,max||180);
 }
 function operationFaultStack(error){
   return String(error&&error.stack||'').split('\n').slice(0,3).map(function(line){return operationFaultText(line,140);}).filter(Boolean).join(' | ').slice(0,360);
@@ -4133,6 +4148,46 @@ function flushOperationThemeLog(){
   logOperation('theme_update',{themeField:fields.length===1?fields[0]:'multiple',count:fields.length});
 }
 function getOperationLogs(){initializeOperationLog();return JSON.parse(JSON.stringify(_operationLogEntries));}
+function applyMergedOperationLogs(remoteEntries){
+  initializeOperationLog();
+  _operationLogEntries=WorkbookImport.mergeOperationLogs(_operationLogEntries, remoteEntries, OPERATION_LOG_LIMIT);
+  try{localStorage.setItem(OPERATION_LOG_KEY, JSON.stringify(_operationLogEntries));}
+  catch(error){
+    if(_operationLogEntries.length>400){_operationLogEntries.splice(0, Math.floor(_operationLogEntries.length/2));try{localStorage.setItem(OPERATION_LOG_KEY, JSON.stringify(_operationLogEntries));}catch(ignore){}}
+  }
+}
+function shrinkImageDataUrl(dataUrl, maxChars){
+  return new Promise(function(resolve){
+    if(!WorkbookImport.validDataUrl(dataUrl)||dataUrl.length<=maxChars||typeof Image==='undefined'){resolve(dataUrl);return;}
+    var image=new Image();
+    image.onload=function(){
+      var edge=Math.max(image.width, image.height)||1, scale=Math.min(1, 960/edge);
+      var canvas=document.createElement('canvas');
+      canvas.width=Math.max(1, Math.round(image.width*scale));
+      canvas.height=Math.max(1, Math.round(image.height*scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      var quality=0.82, out=canvas.toDataURL('image/jpeg', quality);
+      while(out.length>maxChars&&quality>0.4){quality-=0.12;out=canvas.toDataURL('image/jpeg', quality);}
+      resolve(WorkbookImport.validDataUrl(out)&&out.length<dataUrl.length?out:dataUrl);
+    };
+    image.onerror=function(){resolve('');};
+    image.src=dataUrl;
+  });
+}
+async function buildCloudFiles(){
+  var copy=JSON.parse(JSON.stringify(state));
+  var products=copy.worktimeProducts||[];
+  for(var i=0;i<products.length;i++){
+    var images=products[i].workbookSnapshot&&products[i].workbookSnapshot.workbenchImages;
+    if(!images)continue;
+    for(var n=0;n<images.length;n++){
+      if(!images[n]||typeof images[n].dataUrl!=='string')continue;
+      images[n].dataUrl=await shrinkImageDataUrl(images[n].dataUrl, 160000);
+    }
+  }
+  initializeOperationLog();
+  return WorkbookImport.packCloudFiles(copy, _operationLogEntries, OPERATION_LOG_LIMIT);
+}
 function operationLogRangeBound(input,end){
   if(!input||!input.value)return null;
   var time=new Date(input.value);if(!Number.isFinite(time.getTime()))return null;

@@ -230,7 +230,7 @@
     layer.style.left=rootBox.left+'px';layer.style.top=rootBox.top+'px';layer.style.width=rootBox.width+'px';layer.style.height=rootBox.height+'px';
     var sheet=activeSheet(eng),current=sheetId(sheet),seen={};
     imagesOf(eng).forEach(function(item){
-      if(!item||typeof item.dataUrl!=='string'||!item.dataUrl||(item.sheetId&&item.sheetId!==current))return;
+      if(!item||typeof WorkbookImport==='undefined'||!WorkbookImport.validDataUrl(item.dataUrl)||(item.sheetId&&item.sheetId!==current))return;
       if(!item.id)item.id=uid();
       if(item.row==null)item.row=0;
       if(item.column==null)item.column=0;
@@ -242,7 +242,10 @@
       if(!node){
         node=doc.createElement('div');
         node.className='wb-sheet-image';node.setAttribute('data-image-id',item.id);
-        node.innerHTML='<img alt="" draggable="false" src="'+item.dataUrl+'">'+IMAGE_HANDLES.map(function(handle){return '<i data-handle="'+handle+'"></i>';}).join('');
+        var img=doc.createElement('img');
+        img.alt='';img.draggable=false;img.src=item.dataUrl;
+        node.appendChild(img);
+        IMAGE_HANDLES.forEach(function(handle){var mark=doc.createElement('i');mark.setAttribute('data-handle',handle);node.appendChild(mark);});
         bindImageNode(eng,doc,node,item);
         layer.appendChild(node);
       }
@@ -371,31 +374,37 @@
 
   function extensionOf(mime){return mime==='image/png'?'png':mime==='image/gif'?'gif':'jpeg';}
   function rawBase64(dataUrl){var comma=String(dataUrl||'').indexOf(',');return comma>=0?dataUrl.slice(comma+1):String(dataUrl||'');}
+  function sheetPixels(snapshot, sheetId){
+    var sheet=snapshot&&snapshot.sheets&&snapshot.sheets[sheetId];
+    return sheet||{columnData:{},rowData:{},defaultColumnWidth:75,defaultRowHeight:20};
+  }
   window.wbExcelAttachImages=function(workbook,snapshot){
-    var images=snapshot&&snapshot.workbenchImages||[];if(!images.length||!workbook)return;
+    var images=snapshot&&snapshot.workbenchImages||[];if(!images.length||!workbook||typeof WorkbookImport==='undefined')return;
     var byName={};(workbook.worksheets||[]).forEach(function(sheet){byName[sheet.name]=sheet;});
     images.forEach(function(item){
+      if(!item||!WorkbookImport.validDataUrl(item.dataUrl))return;
       var source=snapshot.sheets&&snapshot.sheets[item.sheetId];
       var worksheet=source&&byName[source.name];if(!worksheet)return;
       var id=workbook.addImage({base64:rawBase64(item.dataUrl),extension:extensionOf(item.mime)});
-      var col=item.column+(item.mode==='float'?(item.dx||0)/120:0),row=item.row+(item.mode==='float'?(item.dy||0)/28:0);
-      worksheet.addImage(id,{tl:{col:col,row:row},ext:{width:item.w||80,height:item.h||60},editAs:item.mode==='float'?'absolute':'oneCell'});
+      var metrics=sheetPixels(snapshot, item.sheetId);
+      var colPx=(metrics.columnData&&metrics.columnData[item.column]&&metrics.columnData[item.column].w)||metrics.defaultColumnWidth||75;
+      var rowPx=(metrics.rowData&&metrics.rowData[item.row]&&metrics.rowData[item.row].h)||metrics.defaultRowHeight||20;
+      var col=(item.column||0)+(item.mode==='float'?(item.dx||0)/Math.max(1,colPx):0);
+      var row=(item.row||0)+(item.mode==='float'?(item.dy||0)/Math.max(1,rowPx):0);
+      worksheet.addImage(id,{tl:{col:col,row:row},ext:{width:item.w||80,height:item.h||60},editAs:'oneCell'});
     });
   };
   window.wbExcelReadImages=function(workbook,snapshot){
+    if(typeof WorkbookImport==='undefined')return [];
     var images=[],nameToId={};
     Object.keys(snapshot.sheets||{}).forEach(function(id){nameToId[snapshot.sheets[id].name]=id;});
     (workbook.worksheets||[]).forEach(function(worksheet){
-      if(typeof worksheet.getImages!=='function')return;
-      worksheet.getImages().forEach(function(item){
-        var media=workbook.getImage&&workbook.getImage(item.imageId);
-        var range=item.range||{},tl=range.tl||{},ext=range.ext||{};
-        var col=Math.max(0,Math.floor(tl.nativeCol!=null?tl.nativeCol:tl.col||0));
-        var row=Math.max(0,Math.floor(tl.nativeRow!=null?tl.nativeRow:tl.row||0));
-        var buffer=media&&(media.buffer||media.base64);
-        if(!buffer)return;
-        var mime=media.extension==='png'?'image/png':'image/jpeg';
-        images.push({id:uid(),sheetId:nameToId[worksheet.name]||'',mode:range.editAs==='absolute'?'float':'cell',row:row,column:col,dx:0,dy:0,w:Math.round(ext.width||80),h:Math.round(ext.height||60),mime:mime,dataUrl:'data:'+mime+';base64,'+buffer});
+      var sheetId=nameToId[worksheet.name]||'';
+      var sheet=snapshot.sheets&&snapshot.sheets[sheetId];
+      WorkbookImport.readWorksheetImages(worksheet, sheet||{}).forEach(function(item){
+        item.id=uid();
+        item.sheetId=sheetId;
+        images.push(item);
       });
     });
     return images;
